@@ -1,0 +1,56 @@
+/* Copyright (c) 2020-present Mattermost, Inc. All Rights Reserved. */
+/* See LICENSE.txt for license information. */
+
+// Global styles for standalone widget to match webapp
+// Ensures consistent fonts and tooltip colors in Desktop widget
+
+html,
+body {
+    font-family: 'Effra_Trial_Rg', 'Noto Sans', 'Noto Sans Arabic', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+// Ensure tooltip colors match webapp
+.tooltip {
+    font-family: 'Effra_Trial_Rg', 'Noto Sans', 'Noto Sans Arabic', sans-serif;
+
+    .tooltip-inner {
+        background: #00987e !important;
+        color: #ffffff;
+        border: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
+        box-shadow: 0 6px 14px 0 rgba(0, 0, 0, 0.12);
+    }
+
+    &.top .tooltip-arrow {
+        border-top-color: var(--button-bg) !important;
+    }
+
+    &.bottom .tooltip-arrow {
+        border-bottom-color: var(--button-bg) !important;
+    }
+
+    &.left .tooltip-arrow {
+        border-left-color: var(--button-bg) !important;
+    }
+
+    &.right .tooltip-arrow {
+        border-right-color: var(--button-bg) !important;
+    }
+}
+
+// Ensure consistent background in widget
+body {
+    background: transparent;
+}
+
+// RTL specific adjustments for Arabic
+[dir="rtl"] {
+    .calls-channel-link {
+        direction: rtl;
+    }
+
+    .tooltip {
+        direction: rtl;
+    }
+}

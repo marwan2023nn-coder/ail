@@ -1,0 +1,77 @@
+@use 'base/css_variables';
+@use 'base/typography';
+
+@import '~@mattermost/compass-icons/css/compass-icons.css';
+
+@mixin file-icon($path) {
+    background-image: url($path);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 24px 24px;
+}
+
+/* with this, padding doesn't change an element's width & height */
+* {
+    box-sizing: border-box;
+    -moz-box-sizing: border-box;
+    -webkit-box-sizing: border-box;
+
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    margin: 0;
+    background-color: transparent;
+    font-family: 'Graphik Arabic', sans-serif;
+    overflow: hidden;
+    min-height: fit-content;
+    width: 224px; // 200 + 12 + 12
+
+    #app {
+        background-color: transparent;
+        font-family: 'Graphik Arabic', sans-serif;
+        padding: 0 0 12px 12px;
+        height: 100%;
+        width: 100%;
+
+        .DownloadsDropdownMenu {
+            background: var(--center-channel-bg);
+            border-radius: 4px;
+            border: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
+            box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.12);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            padding: 8px 0px;
+            width: 100%;
+
+            .DownloadsDropdownMenu__MenuItem {
+                font-family: 'Graphik Arabic', sans-serif;
+                align-items: center;
+                background-color: transparent;
+                color: var(--center-channel-color);
+                cursor: pointer;
+                display: flex;
+                font-size: 14px;
+                font-weight: 400;
+                flex-grow: 1;
+                height: fit-content(25%);
+                justify-content: flex-start;
+                padding: 8px 20px;
+                min-height: 36px;
+                width: 100%;
+direction: rtl;
+                &:hover {
+                    background-color: rgba(var(--center-channel-color-rgb), 0.08);
+                }
+
+                &.disabled {
+                    background-color: transparent;
+                    cursor: unset;
+                    color: rgba(var(--center-channel-color-rgb), 0.32);
+                }
+            }
+        }
+    }
+}

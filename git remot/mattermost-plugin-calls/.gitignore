@@ -1,0 +1,46 @@
+dist/
+
+# Mac
+.DS_Store
+
+# VSCode
+.vscode/
+
+# Jetbrains
+.idea/
+
+# Vim
+*.vim
+
+# generated files
+bin
+dist
+tests-e2e/node_modules
+tests-e2e/cypress/screenshots
+tests-e2e/cypress/videos
+.eslintcache
+report.xml
+
+webapp/src/manifest.js
+webapp/src/manifest.ts
+webapp/mattermost-webapp/
+webapp/coverage
+server/manifest.go
+server/data/
+server/assets/i18n
+
+# e2e
+config/
+dotenv/
+logs/
+e2e/plugin.json
+
+# notice
+.notice-work
+
+# server bundled translations
+server/assets/i18n
+.aider*
+
+go.work
+go.work.sum

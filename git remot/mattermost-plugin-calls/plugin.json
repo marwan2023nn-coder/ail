@@ -1,0 +1,738 @@
+{
+  "id": "com.workspace.calls",
+  "name": "المكالمات",
+  "description": "يدمج الاتصال الصوتي الفوري داخل workspace",
+  "homepage_url": "https://github.com/mattermost/mattermost-plugin-calls/",
+  "support_url": "https://github.com/mattermost/mattermost-plugin-calls/issues",
+  "icon_path": "assets/plugin_icon.svg",
+  "min_server_version": "10.0.0",
+  "server": {
+    "executables": {
+      "linux-amd64": "server/dist/plugin-linux-amd64",
+      "linux-arm64": "server/dist/plugin-linux-arm64",
+      "freebsd-amd64": "server/dist/plugin-freebsd-amd64",
+      "openbsd-amd64": "server/dist/plugin-openbsd-amd64"
+    }
+  },
+  "webapp": {
+    "bundle_path": "webapp/dist/main.js"
+  },
+  "settings_schema": {
+    "header": "",
+    "footer": "",
+    "sections": [
+      {
+        "key": "GeneralSettings",
+        "title": "الإعدادات العامة",
+        "subtitle": "إعدادات المشاركين ومشاركة الشاشة والرنين والمزيد",
+        "custom": true,
+        "fallback": true,
+        "settings": [
+          {
+            "key": "DefaultEnabled",
+            "display_name": "وضع الاختبار",
+            "type": "custom",
+            "help_text": "عند تفعيل وضع الاختبار، يستطيع مسؤولو النظام فقط بدء المكالمات في القنوات. يتيح ذلك إجراء الاختبارات للتأكد من أن المكالمات تعمل كما هو متوقع.",
+            "hosting": "on-prem"
+          },
+          {
+            "key": "MaxCallParticipants",
+            "display_name": "الحد الأقصى للمشاركين في المكالمة",
+            "type": "number",
+            "help_text": "العدد الأقصى للمشاركين الذين يمكنهم الانضمام إلى المكالمة. إذا تُرك فارغًا أو تم ضبطه على 0، يمكن لعدد غير محدود من المشاركين الانضمام.",
+            "default": 0,
+            "hosting": "on-prem"
+          },
+          {
+            "key": "AllowScreenSharing",
+            "display_name": "السماح بمشاركة الشاشة",
+            "type": "bool",
+            "default": true,
+            "help_text": "عند ضبطه على true، يمكن للمشاركين في المكالمة مشاركة شاشتهم."
+          },
+          {
+            "key": "EnableSimulcast",
+            "display_name": "تفعيل البث المتعدد لمشاركة الشاشة (تجريبي)",
+            "type": "bool",
+            "default": false,
+            "help_text": "عند ضبطه على true، يتم تفعيل البث المتعدد لمشاركة الشاشة. يمكن أن يساعد ذلك في تحسين جودة مشاركة الشاشة."
+          },
+          {
+            "key": "EnableRinging",
+            "display_name": "تفعيل رنين المكالمات",
+            "type": "bool",
+            "default": false,
+            "help_text": "عند ضبطه على true، يتم تفعيل ميزة الرنين: سيتلقى المشاركون في الرسائل المباشرة أو الجماعية تنبيهًا على سطح المكتب وإشعار رنين عند بدء مكالمة. يتطلب تغيير هذا الإعداد إعادة تشغيل البلجن."
+          },
+          {
+            "key": "EnableAV1",
+            "display_name": "تفعيل ترميز AV1 لمشاركة الشاشة (تجريبي)",
+            "type": "bool",
+            "default": false,
+            "help_text": "عند ضبطه على true، يتم تفعيل استخدام ترميز AV1 لترميز مسارات مشاركة الشاشة. قد يؤدي ذلك إلى تحسين جودة مشاركة الشاشة للعملاء الذين يدعمونه.\nملاحظة: لن يتم تطبيق هذا الإعداد عندما تكون EnableSimulcast مضبوطة على true."
+          },
+          {
+            "key": "EnableDCSignaling",
+            "display_name": "استخدام قنوات البيانات للإشارات (تجريبي)",
+            "type": "bool",
+            "default": false,
+            "help_text": "عند ضبطه على true، سيستخدم العملاء قنوات بيانات WebRTC لإرسال إشارات مسارات الوسائط الجديدة. يمكن أن يجعل ذلك العملية أكثر كفاءة وأقل عرضة لحالات التعارض، خاصة عند تكرار انقطاعات WebSocket."
+          },
+          {
+            "key": "EnableVideo",
+            "display_name": "تفعيل مكالمات الفيديو في الرسائل المباشرة (تجريبي)",
+            "type": "bool",
+            "default": false,
+            "help_text": "عند ضبطه على true، يتم تفعيل مكالمات الفيديو في قنوات الرسائل المباشرة."
+          }
+        ]
+      },
+      {
+        "key": "RTCDService",
+        "title": "خدمة RTCD",
+        "subtitle": "تكوين خدمة مخصصة تُستخدم لتخفيف عبء المكالمات ودعم عمليات نشر قابلة للتوسع وآمنة بكفاءة",
+        "custom": true,
+        "fallback": true,
+        "settings": [
+          {
+            "key": "RTCDServiceURL",
+            "display_name": "رابط خدمة RTCD",
+            "type": "text",
+            "help_text": "(اختياري) رابط نسخة خدمة RTCD قيد التشغيل التي ستستضيف المكالمات. عند ضبطه بقيمة غير فارغة، ستتم معالجة جميع المكالمات بواسطة الخدمة الخارجية.",
+            "placeholder": "https://rtcd.example.com",
+            "hosting": "on-prem"
+          }
+        ]
+      },
+      {
+        "key": "RTCServer",
+        "title": "خادم RTC",
+        "subtitle": "إعدادات الشبكة لخادم RTC المدمج",
+        "custom": true,
+        "fallback": true,
+        "settings": [
+          {
+            "key": "UDPServerAddress",
+            "display_name": "عنوان خادم RTC (UDP)",
+            "type": "text",
+            "help_text": "عنوان IP المحلي الذي يستخدمه خادم RTC للاستماع لاتصالات UDP.",
+            "default": "",
+            "placeholder": "127.0.0.1",
+            "hosting": "on-prem"
+          },
+          {
+            "key": "TCPServerAddress",
+            "display_name": "عنوان خادم RTC (TCP)",
+            "type": "text",
+            "help_text": "عنوان IP المحلي الذي يستخدمه خادم RTC للاستماع لاتصالات TCP.",
+            "default": "",
+            "placeholder": "127.0.0.1",
+            "hosting": "on-prem"
+          },
+          {
+            "key": "UDPServerPort",
+            "display_name": "منفذ خادم RTC (UDP)",
+            "type": "number",
+            "help_text": "منفذ UDP الذي سيستمع عليه خادم RTC.",
+            "default": 8443,
+            "placeholder": "8443",
+            "hosting": "on-prem"
+          },
+          {
+            "key": "TCPServerPort",
+            "display_name": "منفذ خادم RTC (TCP)",
+            "type": "number",
+            "help_text": "منفذ TCP الذي سيستمع عليه خادم RTC.",
+            "default": 8443,
+            "placeholder": "8443",
+            "hosting": "on-prem"
+          },
+          {
+            "key": "EnableIPv6",
+            "display_name": "تفعيل دعم IPv6 (تجريبي)",
+            "type": "bool",
+            "help_text": "عند ضبطه على true، ستعمل خدمة RTC بوضع المكدس المزدوج، بحيث تستمع لاتصالات IPv6 وتولّد مرشحين بالإضافة إلى مرشحي IPv4.",
+            "default": false,
+            "hosting": "on-prem"
+          }
+        ]
+      },
+      {
+        "key": "ICEAndTURN",
+        "title": "ICE و TURN",
+        "custom": true,
+        "fallback": true,
+        "settings": [
+          {
+            "key": "ICEHostOverride",
+            "display_name": "تجاوز مضيف ICE",
+            "type": "text",
+            "help_text": "(اختياري) عنوان IP الذي سيتم استخدامه كمرشح مضيف ICE. إذا كان فارغًا، فسيتم افتراضيًا حله عبر STUN.",
+            "default": "",
+            "hosting": "on-prem"
+          },
+          {
+            "key": "ICEHostPortOverride",
+            "display_name": "تجاوز منفذ مضيف ICE",
+            "type": "number",
+            "help_text": "(اختياري) رقم منفذ يُستخدم كتجاوز لمرشحي المضيف بدلًا من المنفذ المستخدم للاستماع.\nملاحظة: سيتم تطبيق هذا المنفذ على مرشحي المضيف لكل من UDP و TCP.",
+            "hosting": "on-prem"
+          },
+          {
+            "key": "ICEServersConfigs",
+            "display_name": "إعدادات خوادم ICE",
+            "type": "longtext",
+            "secret": true,
+            "help_text": "(اختياري) قائمة إعدادات خوادم ICE (STUN/TURN) المراد استخدامها. يجب أن يحتوي هذا الحقل على مصفوفة JSON صالحة.",
+            "default": "[{\"urls\":[\"stun:stun.global.calls.workspace.com:3478\"]}]",
+            "placeholder": "[{\n \"urls\":[\"turn:turnserver.example.org:3478\"],\n \"username\": \"webrtc\",\n \"credential\": \"turnpassword\"\n}]",
+            "hosting": "on-prem"
+          },
+          {
+            "key": "TURNStaticAuthSecret",
+            "display_name": "سر المصادقة الثابت لـ TURN",
+            "type": "text",
+            "secret": true,
+            "default": "",
+            "help_text": "(اختياري) المفتاح السري المستخدم لإنشاء بيانات اعتماد مصادقة قصيرة العمر لـ TURN.",
+            "hosting": "on-prem"
+          },
+          {
+            "key": "TURNCredentialsExpirationMinutes",
+            "display_name": "انتهاء صلاحية بيانات اعتماد TURN (بالدقائق)",
+            "type": "number",
+            "default": 240,
+            "help_text": "(اختياري) عدد الدقائق التي ستكون بيانات اعتماد TURN المُنشأة صالحة خلالها.",
+            "hosting": "on-prem"
+          },
+          {
+            "key": "ServerSideTURN",
+            "display_name": "TURN من جهة الخادم",
+            "type": "bool",
+            "default": false,
+            "help_text": "(اختياري) عند التفعيل، سيتم تمرير مرشحي TURN المكوّنين واستخدامهم للاتصالات التي يبدأها الخادم.",
+            "hosting": "on-prem"
+          }
+        ]
+      },
+      {
+        "key": "CallRecordings",
+        "title": "تسجيلات المكالمات",
+        "subtitle": "تشمل التسجيلات عرض نافذة المكالمة بالكامل مع المسار الصوتي للمشاركين وأي فيديو لشاشة مشتركة. يتم تخزين التسجيلات في workspace",
+        "custom": true,
+        "fallback": true,
+        "settings": [
+          {
+            "key": "EnableRecordings",
+            "display_name": "تفعيل تسجيل المكالمات",
+            "type": "bool",
+            "default": false,
+            "help_text": "(اختياري) عند ضبطه على true، يتم تفعيل تسجيل المكالمات."
+          },
+          {
+            "key": "JobServiceURL",
+            "display_name": "رابط خدمة المهام",
+            "type": "text",
+            "help_text": "رابط نسخة خدمة مهام المكالمات قيد التشغيل والمستخدمة لتسجيل المكالمات.",
+            "placeholder": "https://calls-job-service.example.com"
+          },
+          {
+            "key": "MaxRecordingDuration",
+            "display_name": "المدة القصوى لتسجيل المكالمة",
+            "type": "number",
+            "default": 60,
+            "help_text": "المدة القصوى بالدقائق لتسجيلات المكالمات. يجب أن تكون القيمة ضمن النطاق [15, 180]."
+          },
+          {
+            "key": "RecordingQuality",
+            "display_name": "جودة تسجيل المكالمة",
+            "type": "dropdown",
+            "default": "medium",
+            "help_text": "جودة الصوت والفيديو لتسجيلات المكالمات.\n ملاحظة: يمكن أن يؤثر هذا الإعداد على الأداء العام لخدمة المهام وعدد مهام التسجيل المتزامنة التي يمكن تشغيلها.",
+            "options": [
+              {
+                "display_name": "منخفضة",
+                "value": "low"
+              },
+              {
+                "display_name": "متوسطة",
+                "value": "medium"
+              },
+              {
+                "display_name": "عالية",
+                "value": "high"
+              }
+            ],
+            "hosting": "on-prem"
+          }
+        ]
+      },
+      {
+        "key": "CallTranscriptions",
+        "title": "تفريغ المكالمات نصيًا",
+        "subtitle": "يسمح بتحويل المكالمات إلى ملفات نصية. يجب تفعيل التسجيلات",
+        "custom": true,
+        "fallback": true,
+        "settings": [
+          {
+            "key": "EnableTranscriptions",
+            "display_name": "تفعيل تفريغ المكالمات نصيًا (بيتا)",
+            "type": "bool",
+            "default": false,
+            "help_text": "(اختياري) عند ضبطه على true، يتم تفعيل التفريغ النصي بعد المكالمة."
+          },
+          {
+            "key": "TranscribeAPI",
+            "display_name": "واجهة API لمفرّغ المكالمات النصي",
+            "type": "dropdown",
+            "default": "whisper.cpp",
+            "help_text": "واجهة API لتحويل الكلام إلى نص لاستخدامها في التفريغ النصي بعد المكالمة.",
+            "options": [
+              {
+                "display_name": "Whisper.CPP",
+                "value": "whisper.cpp"
+              },
+              {
+                "display_name": "Azure AI",
+                "value": "azure"
+              }
+            ],
+            "hosting": "on-prem"
+          },
+          {
+            "key": "TranscriberModelSize",
+            "display_name": "حجم نموذج تفريغ المكالمات النصي",
+            "type": "dropdown",
+            "default": "base",
+            "help_text": "حجم نموذج تحويل الكلام إلى نص المستخدم للتفريغ النصي بعد المكالمة. تنتج النماذج الأكبر نتائج أكثر دقة على حساب وقت المعالجة واستخدام الموارد.",
+            "options": [
+              {
+                "display_name": "صغير جدًا",
+                "value": "tiny"
+              },
+              {
+                "display_name": "أساسي",
+                "value": "base"
+              },
+              {
+                "display_name": "صغير",
+                "value": "small"
+              }
+            ],
+            "hosting": "on-prem"
+          },
+          {
+            "key": "TranscriberNumThreads",
+            "display_name": "مسارات معالجة تفريغ المكالمات",
+            "type": "number",
+            "default": 2,
+            "help_text": "عدد مسارات المعالجة المستخدمة بواسطة مفرّغ النص بعد المكالمة. يجب أن تكون القيمة ضمن النطاق [1, numCPUs]."
+          },
+          {
+            "key": "TranscribeAPIAzureSpeechKey",
+            "display_name": "مفتاح API لـ Azure",
+            "type": "text",
+            "help_text": "مفتاح API لخدمات الكلام من Azure",
+            "default": "",
+            "hosting": "on-prem"
+          },
+          {
+            "key": "TranscribeAPIAzureSpeechRegion",
+            "display_name": "منطقة API لـ Azure",
+            "type": "text",
+            "help_text": "منطقة API لخدمات الكلام من Azure",
+            "default": "",
+            "hosting": "on-prem"
+          }
+        ]
+      },
+      {
+        "key": "CallLiveCaptions",
+        "title": "التسميات التوضيحية المباشرة",
+        "subtitle": "يعرض الكلمات المنطوقة كتسميات نصية أثناء المكالمة. يجب تفعيل التسجيلات والتفريغ النصي",
+        "custom": true,
+        "fallback": true,
+        "settings": [
+          {
+            "key": "EnableLiveCaptions",
+            "display_name": "تفعيل التسميات التوضيحية المباشرة (بيتا)",
+            "type": "bool",
+            "default": false,
+            "help_text": "(اختياري) عند ضبطه على true، يتم تفعيل التسميات التوضيحية المباشرة."
+          },
+          {
+            "key": "LiveCaptionsModelSize",
+            "display_name": "التسميات التوضيحية المباشرة: حجم النموذج",
+            "type": "dropdown",
+            "default": "tiny",
+            "help_text": "حجم نموذج تحويل الكلام إلى نص المستخدم للتسميات التوضيحية المباشرة. تنتج النماذج الأكبر نتائج أكثر دقة على حساب وقت المعالجة واستخدام الموارد.",
+            "options": [
+              {
+                "display_name": "صغير جدًا",
+                "value": "tiny"
+              },
+              {
+                "display_name": "أساسي",
+                "value": "base"
+              },
+              {
+                "display_name": "صغير",
+                "value": "small"
+              }
+            ],
+            "hosting": "on-prem"
+          },
+          {
+            "key": "LiveCaptionsNumTranscribers",
+            "display_name": "التسميات التوضيحية المباشرة: عدد مفرّغي النص المستخدمين لكل مكالمة",
+            "type": "number",
+            "default": 1,
+            "help_text": "عدد مفرّغي النص المنفصلين للتسميات التوضيحية المباشرة لكل مكالمة. كل واحد منهم يفرّغ مسارًا صوتيًا واحدًا في كل مرة. يجب أن يكون حاصل LiveCaptionsNumTranscribers * LiveCaptionsNumThreadsPerTranscriber ضمن النطاق [1, numCPUs]."
+          },
+          {
+            "key": "LiveCaptionsNumThreadsPerTranscriber",
+            "display_name": "التسميات التوضيحية المباشرة: عدد مسارات المعالجة لكل مفرّغ نص",
+            "type": "number",
+            "default": 2,
+            "help_text": "عدد مسارات المعالجة لكل مفرّغ نص للتسميات التوضيحية المباشرة. يجب أن يكون حاصل LiveCaptionsNumTranscribers * LiveCaptionsNumThreadsPerTranscriber ضمن النطاق [1, numCPUs]."
+          },
+          {
+            "key": "LiveCaptionsLanguage",
+            "display_name": "لغة التسميات التوضيحية المباشرة",
+            "type": "text",
+            "default": "en",
+            "help_text": "اللغة التي يتم تمريرها إلى مفرّغ نص التسميات التوضيحية المباشرة. يجب أن تكون رمز لغة من حرفين وفق ISO 639 Set 1، مثل 'ar'. إذا تُركت فارغة، فسيتم ضبطها افتراضيًا على الإنجليزية 'ar'."
+          }
+        ]
+      }
+    ],
+    "settings": [
+      {
+        "key": "DefaultEnabled",
+        "display_name": "وضع الاختبار",
+        "type": "custom",
+        "help_text": "عند تفعيل وضع الاختبار، يستطيع مسؤولو النظام فقط بدء المكالمات في القنوات. يتيح ذلك إجراء الاختبارات للتأكد من أن المكالمات تعمل كما هو متوقع.",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "UDPServerAddress",
+        "display_name": "عنوان خادم RTC (UDP)",
+        "type": "text",
+        "help_text": "عنوان IP المحلي الذي يستخدمه خادم RTC للاستماع لاتصالات UDP.",
+        "default": "",
+        "placeholder": "127.0.0.1",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "TCPServerAddress",
+        "display_name": "عنوان خادم RTC (TCP)",
+        "type": "text",
+        "help_text": "عنوان IP المحلي الذي يستخدمه خادم RTC للاستماع لاتصالات TCP.",
+        "default": "",
+        "placeholder": "127.0.0.1",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "UDPServerPort",
+        "display_name": "منفذ خادم RTC (UDP)",
+        "type": "number",
+        "help_text": "منفذ UDP الذي سيستمع عليه خادم RTC.",
+        "default": 8443,
+        "placeholder": "8443",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "TCPServerPort",
+        "display_name": "منفذ خادم RTC (TCP)",
+        "type": "number",
+        "help_text": "منفذ TCP الذي سيستمع عليه خادم RTC.",
+        "default": 8443,
+        "placeholder": "8443",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "ICEHostOverride",
+        "display_name": "تجاوز مضيف ICE",
+        "type": "text",
+        "help_text": "(اختياري) عنوان IP الذي سيتم استخدامه كمرشح مضيف ICE. إذا كان فارغًا، فسيتم افتراضيًا حله عبر STUN.",
+        "default": "",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "ICEHostPortOverride",
+        "display_name": "تجاوز منفذ مضيف ICE",
+        "type": "number",
+        "help_text": "(اختياري) رقم منفذ يُستخدم كتجاوز لمرشحي المضيف بدلًا من المنفذ المستخدم للاستماع.\nملاحظة: سيتم تطبيق هذا المنفذ على مرشحي المضيف لكل من UDP و TCP.",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "RTCDServiceURL",
+        "display_name": "رابط خدمة RTCD",
+        "type": "text",
+        "help_text": "(اختياري) رابط نسخة خدمة RTCD قيد التشغيل التي ستستضيف المكالمات. عند ضبطه بقيمة غير فارغة، ستتم معالجة جميع المكالمات بواسطة الخدمة الخارجية.",
+        "placeholder": "https://rtcd.example.com",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "MaxCallParticipants",
+        "display_name": "الحد الأقصى للمشاركين في المكالمة",
+        "type": "number",
+        "help_text": "العدد الأقصى للمشاركين الذين يمكنهم الانضمام إلى المكالمة. إذا تُرك فارغًا أو تم ضبطه على 0، يمكن لعدد غير محدود من المشاركين الانضمام.",
+        "default": 0,
+        "hosting": "on-prem"
+      },
+      {
+        "key": "ICEServersConfigs",
+        "display_name": "إعدادات خوادم ICE",
+        "type": "longtext",
+        "help_text": "(اختياري) قائمة إعدادات خوادم ICE (STUN/TURN) المراد استخدامها. يجب أن يحتوي هذا الحقل على مصفوفة JSON صالحة.",
+        "default": "[{\"urls\":[\"stun:stun.global.calls.workspace.com:3478\"]}]",
+        "placeholder": "[{\n \"urls\":[\"turn:turnserver.example.org:3478\"],\n \"username\": \"webrtc\",\n \"credential\": \"turnpassword\"\n}]",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "TURNStaticAuthSecret",
+        "display_name": "سر المصادقة الثابت لـ TURN",
+        "type": "text",
+        "default": "",
+        "help_text": "(اختياري) المفتاح السري المستخدم لإنشاء بيانات اعتماد مصادقة قصيرة العمر لـ TURN.",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "TURNCredentialsExpirationMinutes",
+        "display_name": "انتهاء صلاحية بيانات اعتماد TURN (بالدقائق)",
+        "type": "number",
+        "default": 240,
+        "help_text": "(اختياري) عدد الدقائق التي ستكون بيانات اعتماد TURN المُنشأة صالحة خلالها.",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "ServerSideTURN",
+        "display_name": "TURN من جهة الخادم",
+        "type": "bool",
+        "default": false,
+        "help_text": "(اختياري) عند التفعيل، سيتم تمرير مرشحي TURN المكوّنين واستخدامهم للاتصالات التي يبدأها الخادم.",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "AllowScreenSharing",
+        "display_name": "السماح بمشاركة الشاشة",
+        "type": "bool",
+        "default": true,
+        "help_text": "عند ضبطه على true، يمكن للمشاركين في المكالمة مشاركة شاشتهم."
+      },
+      {
+        "key": "EnableSimulcast",
+        "display_name": "تفعيل البث المتعدد لمشاركة الشاشة (تجريبي)",
+        "type": "bool",
+        "default": false,
+        "help_text": "عند ضبطه على true، يتم تفعيل البث المتعدد لمشاركة الشاشة. يمكن أن يساعد ذلك في تحسين جودة مشاركة الشاشة."
+      },
+      {
+        "key": "EnableRecordings",
+        "display_name": "تفعيل تسجيل المكالمات",
+        "type": "bool",
+        "default": false,
+        "help_text": "(اختياري) عند ضبطه على true، يتم تفعيل تسجيل المكالمات."
+      },
+      {
+        "key": "JobServiceURL",
+        "display_name": "رابط خدمة المهام",
+        "type": "text",
+        "help_text": "رابط نسخة خدمة مهام المكالمات قيد التشغيل والمستخدمة لتسجيل المكالمات.",
+        "placeholder": "https://calls-job-service.example.com"
+      },
+      {
+        "key": "MaxRecordingDuration",
+        "display_name": "المدة القصوى لتسجيل المكالمة",
+        "type": "number",
+        "default": 60,
+        "help_text": "المدة القصوى بالدقائق لتسجيلات المكالمات. يجب أن تكون القيمة ضمن النطاق [15, 180]."
+      },
+      {
+        "key": "RecordingQuality",
+        "display_name": "جودة تسجيل المكالمة",
+        "type": "dropdown",
+        "default": "medium",
+        "help_text": "جودة الصوت والفيديو لتسجيلات المكالمات.\n ملاحظة: يمكن أن يؤثر هذا الإعداد على الأداء العام لخدمة المهام وعدد مهام التسجيل المتزامنة التي يمكن تشغيلها.",
+        "options": [
+          {
+            "display_name": "منخفضة",
+            "value": "low"
+          },
+          {
+            "display_name": "متوسطة",
+            "value": "medium"
+          },
+          {
+            "display_name": "عالية",
+            "value": "high"
+          }
+        ],
+        "hosting": "on-prem"
+      },
+      {
+        "key": "EnableTranscriptions",
+        "display_name": "تفعيل تفريغ المكالمات نصيًا (تجريبي)",
+        "type": "bool",
+        "default": false,
+        "help_text": "(اختياري) عند ضبطه على true، يتم تفعيل التفريغ النصي بعد المكالمة."
+      },
+      {
+        "key": "TranscribeAPI",
+        "display_name": "واجهة API لمفرّغ المكالمات النصي",
+        "type": "dropdown",
+        "default": "whisper.cpp",
+        "help_text": "واجهة API لتحويل الكلام إلى نص لاستخدامها في التفريغ النصي بعد المكالمة.",
+        "options": [
+          {
+            "display_name": "Whisper.CPP",
+            "value": "whisper.cpp"
+          },
+          {
+            "display_name": "Azure AI",
+            "value": "azure"
+          }
+        ],
+        "hosting": "on-prem"
+      },
+      {
+        "key": "TranscriberModelSize",
+        "display_name": "حجم نموذج تفريغ المكالمات النصي",
+        "type": "dropdown",
+        "default": "base",
+        "help_text": "حجم نموذج تحويل الكلام إلى نص المستخدم للتفريغ النصي بعد المكالمة. تنتج النماذج الأكبر نتائج أكثر دقة على حساب وقت المعالجة واستخدام الموارد.",
+        "options": [
+          {
+            "display_name": "صغير جدًا",
+            "value": "tiny"
+          },
+          {
+            "display_name": "أساسي",
+            "value": "base"
+          },
+          {
+            "display_name": "صغير",
+            "value": "small"
+          }
+        ],
+        "hosting": "on-prem"
+      },
+      {
+        "key": "TranscribeAPIAzureSpeechKey",
+        "display_name": "مفتاح API لخدمات الكلام من Azure",
+        "type": "text",
+        "help_text": "مفتاح API لخدمات الكلام من Azure",
+        "default": "",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "TranscribeAPIAzureSpeechRegion",
+        "display_name": "منطقة API لخدمات الكلام من Azure",
+        "type": "text",
+        "help_text": "منطقة API لخدمات الكلام من Azure",
+        "default": "",
+        "hosting": "on-prem"
+      },
+      {
+        "key": "TranscriberNumThreads",
+        "display_name": "مسارات معالجة تفريغ المكالمات",
+        "type": "number",
+        "default": 2,
+        "help_text": "عدد مسارات المعالجة المستخدمة بواسطة مفرّغ النص بعد المكالمة. يجب أن تكون القيمة ضمن النطاق [1, numCPUs]."
+      },
+      {
+        "key": "EnableLiveCaptions",
+        "display_name": "تفعيل التسميات التوضيحية المباشرة (تجريبي)",
+        "type": "bool",
+        "default": false,
+        "help_text": "(اختياري) عند ضبطه على true، يتم تفعيل التسميات التوضيحية المباشرة."
+      },
+      {
+        "key": "LiveCaptionsModelSize",
+        "display_name": "التسميات التوضيحية المباشرة: حجم النموذج",
+        "type": "dropdown",
+        "default": "tiny",
+        "help_text": "حجم نموذج تحويل الكلام إلى نص المستخدم للتسميات التوضيحية المباشرة. تنتج النماذج الأكبر نتائج أكثر دقة على حساب وقت المعالجة واستخدام الموارد.",
+        "options": [
+          {
+            "display_name": "صغير جدًا",
+            "value": "tiny"
+          },
+          {
+            "display_name": "أساسي",
+            "value": "base"
+          },
+          {
+            "display_name": "صغير",
+            "value": "small"
+          }
+        ],
+        "hosting": "on-prem"
+      },
+      {
+        "key": "LiveCaptionsNumTranscribers",
+        "display_name": "التسميات التوضيحية المباشرة: عدد مفرّغي النص المستخدمين لكل مكالمة",
+        "type": "number",
+        "default": 1,
+        "help_text": "عدد مفرّغي النص المنفصلين للتسميات التوضيحية المباشرة لكل مكالمة. كل واحد منهم يفرّغ مسارًا صوتيًا واحدًا في كل مرة. يجب أن يكون حاصل LiveCaptionsNumTranscribers * LiveCaptionsNumThreadsPerTranscriber ضمن النطاق [1, numCPUs]."
+      },
+      {
+        "key": "LiveCaptionsNumThreadsPerTranscriber",
+        "display_name": "التسميات التوضيحية المباشرة: عدد مسارات المعالجة لكل مفرّغ نص",
+        "type": "number",
+        "default": 2,
+        "help_text": "عدد مسارات المعالجة لكل مفرّغ نص للتسميات التوضيحية المباشرة. يجب أن يكون حاصل LiveCaptionsNumTranscribers * LiveCaptionsNumThreadsPerTranscriber ضمن النطاق [1, numCPUs]."
+      },
+      {
+        "key": "LiveCaptionsLanguage",
+        "display_name": "لغة التسميات التوضيحية المباشرة",
+        "type": "text",
+        "default": "en",
+        "help_text": "اللغة التي يتم تمريرها إلى مفرّغ نص التسميات التوضيحية المباشرة. يجب أن تكون رمز لغة من حرفين وفق ISO 639 Set 1، مثل 'ar'. إذا تُركت فارغة، فسيتم ضبطها افتراضيًا على الإنجليزية 'ar'."
+      },
+      {
+        "key": "EnableIPv6",
+        "display_name": "تفعيل دعم IPv6 (تجريبي)",
+        "type": "bool",
+        "help_text": "عند ضبطه على true، ستعمل خدمة RTC بوضع المكدس المزدوج، بحيث تستمع لاتصالات IPv6 وتولّد مرشحين بالإضافة إلى مرشحي IPv4.",
+        "default": false,
+        "hosting": "on-prem"
+      },
+      {
+        "key": "EnableRinging",
+        "display_name": "تفعيل رنين المكالمات",
+        "type": "bool",
+        "default": false,
+        "help_text": "عند ضبطه على true، يتم تفعيل ميزة الرنين: سيتلقى المشاركون في الرسائل المباشرة أو الجماعية تنبيهًا على سطح المكتب وإشعار رنين عند بدء مكالمة. يتطلب تغيير هذا الإعداد إعادة تشغيل البلجن."
+      },
+      {
+        "key": "EnableAV1",
+        "display_name": "تفعيل ترميز AV1 لمشاركة الشاشة (تجريبي)",
+        "type": "bool",
+        "default": false,
+        "help_text": "عند ضبطه على true، يتم تفعيل استخدام ترميز AV1 لترميز مسارات مشاركة الشاشة. قد يؤدي ذلك إلى تحسين جودة مشاركة الشاشة للعملاء الذين يدعمونه.\nملاحظة: لن يتم تطبيق هذا الإعداد عندما تكون EnableSimulcast مضبوطة على true."
+      },
+      {
+        "key": "EnableDCSignaling",
+        "display_name": "استخدام قنوات البيانات للإشارات (تجريبي)",
+        "type": "bool",
+        "default": false,
+        "help_text": "عند ضبطه على true، سيستخدم العملاء قنوات بيانات WebRTC لإرسال إشارات مسارات الوسائط الجديدة. يمكن أن يجعل ذلك العملية أكثر كفاءة وأقل عرضة لحالات التعارض، خاصة عند تكرار انقطاعات WebSocket."
+      },
+      {
+        "key": "EnableVideo",
+        "display_name": "تفعيل مكالمات الفيديو في الرسائل المباشرة (تجريبي)",
+        "type": "bool",
+        "default": false,
+        "help_text": "عند ضبطه على true، يتم تفعيل مكالمات الفيديو في قنوات الرسائل المباشرة."
+      }
+    ]
+  },
+  "props": {
+    "min_rtcd_version": "v0.17.0",
+    "min_offloader_version": "v0.9.0",
+    "calls_recorder_version": "v0.8.13",
+    "calls_transcriber_version": "v0.7.2"
+  }
+}

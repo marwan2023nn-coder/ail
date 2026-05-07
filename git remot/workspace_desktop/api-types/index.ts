@@ -1,0 +1,138 @@
+// Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
+
+export type DesktopSourcesOptions = {
+    types: Array<'screen' | 'window'>;
+    thumbnailSize?: {height: number; width: number};
+    fetchWindowIcons?: boolean;
+};
+export type DesktopCaptureSource = {
+    id: string;
+    name: string;
+    thumbnailURL: string;
+};
+export type Theme = {
+    sidebarBg: string;
+    sidebarText: string;
+    sidebarUnreadText: string;
+    sidebarTextHoverBg: string;
+    sidebarTextActiveBorder: string;
+    sidebarTextActiveColor: string;
+    sidebarHeaderBg: string;
+    sidebarTeamBarBg: string;
+    sidebarHeaderTextColor: string;
+    onlineIndicator: string;
+    awayIndicator: string;
+    dndIndicator: string;
+    mentionBg: string;
+    mentionColor: string;
+    centerChannelBg: string;
+    centerChannelColor: string;
+    newMessageSeparator: string;
+    linkColor: string;
+    buttonBg: string;
+    buttonColor: string;
+    errorTextColor: string;
+    mentionHighlightBg: string;
+    mentionHighlightLink: string;
+    codeTheme: string;
+
+    isUsingSystemTheme: boolean;
+}
+export type PopoutViewProps = {
+    titleTemplate?: string;
+    isRHS?: boolean;
+};
+
+export type DesktopAPI = {
+
+    // Initialization
+    isDev: () => Promise<boolean>;
+    getAppInfo: () => Promise<{name: string; version: string}>;
+    reactAppInitialized: () => void;
+
+    // Session
+    setSessionExpired: (isExpired: boolean) => void;
+    onUserActivityUpdate: (listener: (
+        userIsActive: boolean,
+        idleTime: number,
+        isSystemEvent: boolean,
+    ) => void) => () => void;
+    onLogin: () => void;
+    onLogout: () => void;
+
+    // Unreads/mentions/notifications
+    sendNotification: (title: string, body: string, channelId: string, teamId: string, url: string, silent: boolean, soundName: string) => Promise<{status: string; reason?: string; data?: string}>;
+    onNotificationClicked: (listener: (channelId: string, teamId: string, url: string) => void) => () => void;
+    setUnreadsAndMentions: (isUnread: boolean, mentionCount: number) => void;
+
+    // Navigation
+    requestBrowserHistoryStatus: () => Promise<{canGoBack: boolean; canGoForward: boolean}>;
+    onBrowserHistoryStatusUpdated: (listener: (canGoBack: boolean, canGoForward: boolean) => void) => () => void;
+    onBrowserHistoryPush: (listener: (pathName: string) => void) => () => void;
+    sendBrowserHistoryPush: (path: string) => void;
+
+    updateTheme: (theme: Theme) => void;
+    getDarkMode: () => Promise<boolean>;
+    onDarkModeChanged: (listener: (darkMode: boolean) => void) => () => void;
+
+    getStunURI: () => Promise<string | undefined>;
+
+    // Calls
+    joinCall: (opts: {
+        callID: string;
+        title: string;
+        rootID: string;
+        channelURL: string;
+    }) => Promise<{callID: string; sessionID: string}>;
+    leaveCall: () => void;
+
+    callsWidgetConnected: (callID: string, sessionID: string) => void;
+    resizeCallsWidget: (width: number, height: number) => void;
+
+    sendCallsError: (err: string, callID?: string, errMsg?: string) => void;
+    onCallsError: (listener: (err: string, callID?: string, errMsg?: string) => void) => () => void;
+
+    getDesktopSources: (opts: DesktopSourcesOptions) => Promise<DesktopCaptureSource[]>;
+
+    openScreenShareModal: () => void;
+    onOpenScreenShareModal: (listener: () => void) => () => void;
+
+    shareScreen: (sourceID: string, withAudio: boolean) => void;
+    onScreenShared: (listener: (sourceID: string, withAudio: boolean) => void) => () => void;
+
+    sendJoinCallRequest: (callId: string) => void;
+    onJoinCallRequest: (listener: (callID: string) => void) => () => void;
+
+    openLinkFromCalls: (url: string) => void;
+
+    focusPopout: () => void;
+
+    openThreadForCalls: (threadID: string) => void;
+    onOpenThreadForCalls: (listener: (threadID: string) => void) => () => void;
+
+    openStopRecordingModal: (channelID: string) => void;
+    onOpenStopRecordingModal: (listener: (channelID: string) => void) => () => void;
+
+    openCallsUserSettings: () => void;
+    onOpenCallsUserSettings: (listener: () => void) => () => void;
+
+    sendRemoteControlEvent: (event: any) => void;
+    requestRemoteControlPermission: () => Promise<boolean>;
+    terminateRemoteControlSession: () => void;
+
+    onSendMetrics: (listener: (metricsMap: Map<string, {cpu?: number; memory?: number}>) => void) => () => void;
+
+    // Utility
+    unregister: (channel: string) => void;
+
+    // Popouts
+    canPopout: () => Promise<boolean>;
+    openPopout: (path: string, props: PopoutViewProps) => Promise<string>;
+    canUsePopoutOption: (optionName: string) => Promise<boolean>;
+    sendToParent: (channel: string, ...args: unknown[]) => void;
+    onMessageFromParent: (listener: (channel: string, ...args: unknown[]) => void) => () => void;
+    sendToPopout: (id: string, channel: string, ...args: unknown[]) => void;
+    onMessageFromPopout: (listener: (id: string, channel: string, ...args: unknown[]) => void) => () => void;
+    onPopoutClosed: (listener: (id: string) => void) => () => void;
+}

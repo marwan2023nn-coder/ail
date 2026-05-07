@@ -1,0 +1,5 @@
+.eslintcache
+junit.xml
+node_modules
+test-results
+*StorageState.json

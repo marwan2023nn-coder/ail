@@ -1,0 +1,251 @@
+// Copyright (c) 2020-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
+
+import {expect, test} from '@playwright/test';
+
+import PlaywrightDevPage from '../page';
+import {getUserIdxForTest, getUsernamesForTest, getUserStoragesForTest, joinCall, startCall, startCallAndPopoutFromPage, startDMWith} from '../utils';
+
+const userStorages = getUserStoragesForTest();
+const usernames = getUsernamesForTest();
+
+test.beforeEach(async ({page}) => {
+    const devPage = new PlaywrightDevPage(page);
+    await devPage.goto();
+});
+
+test.describe('join call', () => {
+    test.use({storageState: userStorages[0]});
+
+    test('channel header button', {
+        tag: '@core',
+    }, async ({page}) => {
+        const devPage = new PlaywrightDevPage(page);
+        const [userPage, _] = await Promise.all([startCall(userStorages[1]), devPage.joinCall()]);
+
+        await Promise.all([devPage.leaveCall(), userPage.leaveCall()]);
+    });
+
+    test('channel toast', async ({page}) => {
+        // start a call
+        const userPage = await startCall(userStorages[1]);
+
+        await page.locator('.post__body').last().scrollIntoViewIfNeeded();
+
+        const joinCallToast = page.locator('#calls-channel-toast');
+        await expect(joinCallToast).toBeVisible();
+        expect(await joinCallToast.screenshot()).toMatchSnapshot('channel-toast.png');
+
+        await joinCallToast.click();
+
+        await expect(userPage.page.getByTestId('call-joined-participant-notification')).toBeVisible();
+        await expect(userPage.page.getByTestId('call-joined-participant-notification')).toContainText(usernames[0] + ' has joined the call.');
+
+        await expect(page.locator('#calls-widget')).toBeVisible();
+        await expect(page.getByTestId('calls-widget-loading-overlay')).toBeHidden();
+
+        const devPage = new PlaywrightDevPage(page);
+        await Promise.all([devPage.leaveCall(), userPage.leaveCall()]);
+    });
+
+    test('call thread', async ({page}) => {
+        // start a call
+        const userPage = await startCall(userStorages[1]);
+
+        const joinCallButton = page.locator('.post__body').last().locator('button:has-text("انضم إلى المكالمة")');
+        await expect(joinCallButton).toBeVisible();
+
+        await expect(page.locator('data-testid=call-thread').last()).toBeVisible();
+
+        // We update the text content to make the snapshot matching consistent since usernames will vary depending on test parallelism.
+        const textEl = page.locator('.post__body').last().getByText(`by ${usernames[1]}`);
+        await expect(textEl).toBeVisible();
+        await textEl.evaluate((el, username) => {
+            if (el.textContent) {
+                el.textContent = el.textContent.replace(username, 'testuser');
+            }
+        }, usernames[1]);
+
+        expect(await page.locator('data-testid=call-thread').last().screenshot()).toMatchSnapshot('call-thread-join.png');
+
+        await joinCallButton.click();
+        await expect(page.locator('#calls-widget')).toBeVisible();
+        await expect(page.getByTestId('calls-widget-loading-overlay')).toBeHidden();
+
+        expect(await page.locator('data-testid=call-thread').last().screenshot()).toMatchSnapshot('call-thread-leave.png');
+
+        const leaveCallButton = page.locator('.post__body').last().getByRole('button', {name: 'Leave'});
+        await expect(leaveCallButton).toBeVisible();
+        await leaveCallButton.click();
+        const menu = page.getByTestId('dropdownmenu');
+        await menu.getByText('Leave call').click();
+
+        await expect(page.locator('#calls-widget')).toBeHidden();
+
+        await userPage.leaveCall();
+    });
+
+    test('user profile popover', async ({page}) => {
+        const userAPage = page;
+        const userADevPage = new PlaywrightDevPage(page);
+        await userADevPage.gotoDM(usernames[1]);
+
+        const userBPage = await startDMWith(userStorages[1], usernames[0]);
+
+        // We have both users send a message so it's much easier to
+        // consistently find the proper selector to open the profile.
+        await userAPage.locator('#post_textbox').fill('messageA');
+        await userAPage.locator('[data-testid=SendMessageButton]').click();
+        await userBPage.page.locator('#post_textbox').fill('messageB');
+        await userBPage.page.locator('[data-testid=SendMessageButton]').click();
+
+        await userAPage.locator('.post__header').locator('button.user-popover').last().click();
+        await expect(userAPage.locator('div.user-profile-popover')).toBeVisible();
+
+        // Start the call with the button
+        await expect(userAPage.getByLabel('Start call')).toBeEnabled();
+        await userAPage.getByLabel('Start call').click();
+
+        // Verify that the call button is disabled while the call is started
+        await expect(userAPage.getByLabel(`Call with ${usernames[1]} is ongoing`)).toBeDisabled();
+
+        // Close User profile overlay
+        await userAPage.getByLabel('Close user profile popover').click();
+
+        await expect(userAPage.locator('#calls-widget')).toBeVisible();
+        await expect(userAPage.locator('#calls-widget-loading-overlay')).toBeHidden();
+
+        await userADevPage.leaveFromWidget();
+        await expect(userAPage.locator('#calls-widget')).toBeHidden();
+
+        // We then verify that call button is disabled if the other user is already in a call with us.
+        await userBPage.startCall();
+
+        // We have both users send a message so it's much easier to
+        // consistently find the proper selector to open the profile.
+        await userAPage.locator('#post_textbox').fill('messageA');
+        await userAPage.locator('[data-testid=SendMessageButton]').click();
+        await userBPage.page.locator('#post_textbox').fill('messageB');
+        await userBPage.page.locator('[data-testid=SendMessageButton]').click();
+
+        await userAPage.locator('.post__header').locator('button.user-popover').last().click();
+        await expect(userAPage.locator('div.user-profile-popover')).toBeVisible();
+        await expect(userAPage.locator('div.user-profile-popover').locator('#startCallButton')).toBeDisabled();
+        await userAPage.locator('button.closeButtonRelativePosition').click();
+
+        await userBPage.leaveCall();
+
+        // We also verify that call button is disabled if we are already in a call with the other user.
+        await userADevPage.startCall();
+
+        // We have both users send a message so it's much easier to
+        // consistently find the proper selector to open the profile.
+        await userAPage.locator('#post_textbox').fill('messageA');
+        await userAPage.locator('[data-testid=SendMessageButton]').click();
+        await userBPage.page.locator('#post_textbox').fill('messageB');
+        await userBPage.page.locator('[data-testid=SendMessageButton]').click();
+
+        await userAPage.locator('.post__header').locator('button.user-popover').last().click();
+        await expect(userAPage.locator('div.user-profile-popover')).toBeVisible();
+        await expect(userAPage.locator('div.user-profile-popover').locator('#startCallButton')).toBeDisabled();
+        await userAPage.locator('button.closeButtonRelativePosition').click();
+
+        await userADevPage.leaveCall();
+    });
+
+    test('multiple sessions per user', {
+        tag: '@core',
+    }, async ({page}) => {
+        const sessionAPage = new PlaywrightDevPage(page);
+
+        // start a call
+        const [_, sessionBPage, sessionCPage] = await Promise.all([
+            sessionAPage.startCall(),
+            startCall(userStorages[1]),
+            startCall(userStorages[1]),
+        ]);
+
+        // Verify there are three participants
+        const numParticipantsEl = sessionCPage.page.locator('#calls-widget-participants-button span');
+        await expect(numParticipantsEl).toBeVisible();
+        const content = await numParticipantsEl.textContent();
+        if (content !== '3') {
+            test.fail();
+            return;
+        }
+
+        await Promise.all([sessionAPage.leaveCall(), sessionBPage.leaveCall(), sessionCPage.leaveCall()]);
+    });
+});
+
+test.describe('end call', () => {
+    test.use({storageState: userStorages[0]});
+    const userIdx = getUserIdxForTest();
+
+    test('widget', async ({page}) => {
+        // userA starts a call and userB joins
+        const userAPage = new PlaywrightDevPage(page);
+        const [_, userBPage] = await Promise.all([
+            userAPage.startCall(),
+            joinCall(userStorages[1]),
+        ]);
+
+        // userA ends call
+        await page.locator('#calls-widget-leave-button').click();
+        const menu = page.getByTestId('dropdownmenu');
+        await menu.getByText('End call for everyone').click();
+        await expect(page.locator('#end_call_confirmation')).toBeVisible();
+        await page.getByTestId('modal-confirm-button').getByText('End call').click();
+
+        // verify call has ended
+        await expect(page.locator('#calls-widget')).toBeHidden();
+        await expect(page.locator('#calls-channel-toast')).toBeHidden();
+        await expect(page.locator(`#sidebarItem_calls${userIdx}`).getByTestId('calls-sidebar-active-call-icon')).toBeHidden();
+        await expect(userBPage.page.locator('#calls-widget')).toBeHidden();
+    });
+
+    test('post card', async ({page}) => {
+        // userA starts a call and userB joins
+        const userAPage = new PlaywrightDevPage(page);
+        const [_, userBPage] = await Promise.all([
+            userAPage.startCall(),
+            joinCall(userStorages[1]),
+        ]);
+
+        // userA ends call
+        const leaveCallButton = page.locator('.post__body').last().getByRole('button', {name: 'Leave'});
+        await expect(leaveCallButton).toBeVisible();
+        await leaveCallButton.click();
+        const menu = page.getByTestId('dropdownmenu');
+        await menu.getByText('End call for everyone').click();
+        await expect(page.locator('#end_call_confirmation')).toBeVisible();
+        await page.getByTestId('modal-confirm-button').getByText('End call').click();
+
+        // verify call has ended
+        await expect(page.locator('#calls-widget')).toBeHidden();
+        await expect(page.locator('#calls-channel-toast')).toBeHidden();
+        await expect(page.locator(`#sidebarItem_calls${userIdx}`).getByTestId('calls-sidebar-active-call-icon')).toBeHidden();
+        await expect(userBPage.page.locator('#calls-widget')).toBeHidden();
+    });
+
+    test('popout', async ({page}) => {
+        const [_, popOut] = await startCallAndPopoutFromPage(new PlaywrightDevPage(page));
+        await expect(popOut.page.locator('#calls-expanded-view')).toBeVisible();
+
+        // userB joins
+        const userBPage = await joinCall(userStorages[1]);
+
+        // userA ends call
+        await popOut.page.locator('#calls-popout-leave-button').click();
+        const menu = popOut.page.getByTestId('dropdownmenu');
+        await menu.getByText('End call for everyone').click();
+        await expect(popOut.page.locator('#end_call_confirmation')).toBeVisible();
+        await popOut.page.getByTestId('modal-confirm-button').getByText('End call').click();
+
+        // verify call has ended
+        await expect(page.locator('#calls-widget')).toBeHidden();
+        await expect(page.locator('#calls-channel-toast')).toBeHidden();
+        await expect(page.locator(`#sidebarItem_calls${userIdx}`).getByTestId('calls-sidebar-active-call-icon')).toBeHidden();
+        await expect(userBPage.page.locator('#calls-widget')).toBeHidden();
+    });
+});

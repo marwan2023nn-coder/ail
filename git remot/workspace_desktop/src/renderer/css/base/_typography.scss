@@ -1,0 +1,68 @@
+@use "mixins";
+@use "variables";
+
+// استيراد خطوط Graphik Arabic
+@import 'assets/fonts/stylesheet.css';
+
+// خط FontAwesome للأيقونات
+@font-face {
+  font-family: 'FontAwesome';
+  font-style: normal;
+  font-weight: 300;
+  src: url('assets/fonts/fontawesome-webfont.woff') format('woff');
+}
+
+b,
+strong {
+    font-weight: 600;
+}
+
+a {
+    color: variables.$primary-color;
+    cursor: pointer;
+    text-decoration: none;
+    word-break: break-word;
+
+    &:focus,
+    &:hover {
+        color: variables.$primary-color--hover;
+    }
+}
+
+body {
+    @include mixins.font-smoothing;
+
+ font-family: 'Graphik Arabic', sans-serif;
+}
+
+h1,
+h2,
+h3 {
+   font-family: 'Graphik Arabic', sans-serif;
+}
+
+h1 {
+    font-weight: 600;
+}
+
+label {
+    &.has-error {
+        color: variables.$red;
+        font-weight: normal;
+    }
+}
+
+.small {
+    font-size: 12px;
+}
+
+.light {
+    opacity: 0.73;
+}
+
+ul,
+ol {
+   padding-right: 22px;
+    margin-top: 3px;
+    margin-bottom: 0.11em;
+}

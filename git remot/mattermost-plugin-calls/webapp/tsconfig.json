@@ -1,0 +1,61 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "es2020",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "useUnknownInCatchVariables": false,
+    "experimentalDecorators": true,
+    "jsx": "react",
+    "types": [
+      "node",
+      "jest",
+      "react",
+      "react-dom"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "src": [
+        "src"
+      ],
+      "@mattermost/types/*": [
+        "./mattermost-webapp/webapp/platform/types/src/*"
+      ],
+      "@mattermost/client": [
+        "./mattermost-webapp/webapp/platform/client/src"
+      ],
+      "@mattermost/client/*": [
+        "./mattermost-webapp/webapp/platform/client/src/*"
+      ],
+      "mattermost-redux/*": [
+        "./mattermost-webapp/webapp/channels/src/packages/mattermost-redux/src/*"
+      ],
+      "reselect": [
+        "./mattermost-webapp/webapp/channels/src/packages/mattermost-redux/src/selectors/create_selector/index"
+      ]
+    }
+  },
+  "include": [
+    "./**/*"
+  ],
+  "exclude": [
+    "dist",
+    "!node_modules/@types",
+    "mattermost-webapp",
+    "!mattermost-webapp/webapp/platform/types"
+  ]
+}

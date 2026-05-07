@@ -1,0 +1,71 @@
+name: ci
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  pull_request:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plugin-ci:
+    uses: mattermost/actions-workflows/.github/workflows/plugin-ci.yml@05547befaf1f79459a2cef959842f5d8bbc6343a
+    with:
+      golangci-lint-version: "v2.11.4"
+      golang-version: "1.24"
+    secrets: inherit
+
+  code-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+      - name: Run tests and collect coverage
+        run: make test
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          files: ./server/cover.out,./webapp/coverage/lcov.info
+          disable_search: true
+
+  lt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install system dependencies
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libopus-dev libopusfile-dev
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.4
+          args: --timeout 5m
+          working-directory: ./lt
+      - name: mattermost-govet
+        shell: bash
+        run: cd ./lt && go install github.com/mattermost/mattermost-govet/v2@3f08281c344327ac09364f196b15f9a81c7eff08 && go vet -vettool=$(which mattermost-govet) -license -license.year=2020 ./...
