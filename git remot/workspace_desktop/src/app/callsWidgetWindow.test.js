@@ -46,6 +46,16 @@ jest.mock('electron', () => ({
     desktopCapturer: {
         getSources: jest.fn(),
     },
+    screen: {
+        getAllDisplays: jest.fn(() => []),
+        getPrimaryDisplay: jest.fn(() => ({
+            id: 'primary-display',
+            bounds: {x: 0, y: 0, width: 1920, height: 1080},
+            scaleFactor: 1,
+        })),
+        getCursorScreenPoint: jest.fn(() => ({x: 0, y: 0})),
+        getDisplayNearestPoint: jest.fn(() => ({id: 'primary-display', bounds: {x: 0, y: 0, width: 1920, height: 1080}, scaleFactor: 1})),
+    },
     systemPreferences: {
         getUserDefault: jest.fn(),
         getMediaAccessStatus: jest.fn(() => 'granted'),
