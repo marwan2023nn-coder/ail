@@ -31,6 +31,51 @@ import {
 
 import {CallsWidgetWindow} from './callsWidgetWindow';
 
+jest.mock('uiohook-napi', () => ({
+    UiohookKey: {
+        Enter: 28,
+        Escape: 1,
+        Backspace: 14,
+        Tab: 15,
+        Space: 57,
+        ArrowUp: 57416,
+        ArrowDown: 57424,
+        ArrowLeft: 57419,
+        ArrowRight: 57421,
+        Ctrl: 29,
+        Shift: 42,
+        Alt: 56,
+        Meta: 3675,
+        Delete: 3667,
+        Home: 3655,
+        End: 3663,
+        PageUp: 3657,
+        PageDown: 3665,
+        Insert: 3666,
+        CapsLock: 58,
+        Semicolon: 39,
+        Equal: 13,
+        Comma: 51,
+        Minus: 12,
+        Period: 52,
+        Slash: 53,
+        Backquote: 41,
+        BracketLeft: 26,
+        Backslash: 43,
+        BracketRight: 27,
+        Quote: 40,
+    },
+    uIOhook: {
+        moveMouse: jest.fn(),
+        clickMouse: jest.fn(),
+        pressMouse: jest.fn(),
+        releaseMouse: jest.fn(),
+        keyTap: jest.fn(),
+        keyToggle: jest.fn(),
+        scrollMouse: jest.fn(),
+    },
+}));
+
 jest.mock('electron', () => ({
     app: {
         getAppPath: () => '/path/to/app',
@@ -867,9 +912,15 @@ describe('main/windows/callsWidgetWindow', () => {
             expect(sources).toEqual([
                 {
                     id: 'screen0',
+                    name: undefined,
+                    screenID: '',
+                    thumbnailURL: undefined,
                 },
                 {
                     id: 'window0',
+                    name: undefined,
+                    screenID: '',
+                    thumbnailURL: undefined,
                 },
             ]);
         });
@@ -894,9 +945,15 @@ describe('main/windows/callsWidgetWindow', () => {
             expect(sources).toEqual([
                 {
                     id: 'screen0',
+                    name: undefined,
+                    screenID: '',
+                    thumbnailURL: undefined,
                 },
                 {
                     id: 'window0',
+                    name: undefined,
+                    screenID: '',
+                    thumbnailURL: undefined,
                 },
             ]);
         });

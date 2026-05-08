@@ -1,7 +1,7 @@
 // Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {mouse, keyboard, Button, Key, Point} from '@nut-tree-fork/nut-js';
+import {uIOhook, UiohookKey} from 'uiohook-napi';
 import type {IpcMainEvent, Rectangle, Event, IpcMainInvokeEvent} from 'electron';
 import {BrowserWindow, desktopCapturer, dialog, ipcMain, systemPreferences, screen, shell} from 'electron';
 
@@ -69,8 +69,8 @@ export class CallsWidgetWindow {
     private warnedWayland?: boolean;
     private remoteControlAllowedForSession?: boolean;
     private remoteControlEventQueue: any[] = [];
+    private pendingMouseMove?: any;
     private isProcessingQueue = false;
-    private lastMouseMoveProcess = 0;
     private cachedTargetDisplay?: any;
 
     private popOut?: BrowserWindow;
@@ -82,9 +82,6 @@ export class CallsWidgetWindow {
     };
 
     constructor() {
-        mouse.config.autoDelayMs = 0;
-        keyboard.config.autoDelayMs = 0;
-
         ipcMain.on(CALLS_WIDGET_RESIZE, this.handleResize);
         ipcMain.on(CALLS_WIDGET_SHARE_SCREEN, this.handleShareScreen);
         ipcMain.on(CALLS_POPOUT_FOCUS, this.handlePopOutFocus);
@@ -613,9 +610,10 @@ export class CallsWidgetWindow {
         log.debug('handleRemoteControlTerminateSession');
         this.remoteControlAllowedForSession = false;
         this.remoteControlEventQueue = [];
+        this.pendingMouseMove = undefined;
     };
 
-    private handleSendRemoteControlEvent = async (ev: IpcMainEvent, remoteEvent: any) => {
+    private handleSendRemoteControlEvent = (ev: IpcMainEvent, remoteEvent: any) => {
         if (!this.mainView || this.mainView.isDestroyed()) {
             return;
         }
@@ -634,7 +632,13 @@ export class CallsWidgetWindow {
             return;
         }
 
-        this.remoteControlEventQueue.push(remoteEvent);
+        const type = (remoteEvent.type || remoteEvent.action || '').toLowerCase();
+        if (type === 'mousemove' || type === 'move') {
+            this.pendingMouseMove = remoteEvent;
+        } else {
+            this.remoteControlEventQueue.push(remoteEvent);
+        }
+
         if (this.isProcessingQueue) {
             return;
         }
@@ -645,330 +649,211 @@ export class CallsWidgetWindow {
     private processRemoteControlQueue = async () => {
         this.isProcessingQueue = true;
 
-        while (this.remoteControlEventQueue.length > 0) {
+        while (this.remoteControlEventQueue.length > 0 || this.pendingMouseMove) {
+            // Priority 1: Handle any pending mouse move
+            if (this.pendingMouseMove) {
+                const moveEvent = this.pendingMouseMove;
+                this.pendingMouseMove = undefined;
+                await this.executeRemoteControlEvent(moveEvent);
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+
+            // Priority 2: Handle next event in queue
             const remoteEvent = this.remoteControlEventQueue.shift();
-            if (!remoteEvent) {
-                continue;
+            if (remoteEvent) {
+                await this.executeRemoteControlEvent(remoteEvent);
+                await new Promise((resolve) => setTimeout(resolve, 0));
             }
-
-            const {type, action, x, y, button, key, code, deltaX, deltaY, ctrlKey, shiftKey, altKey, metaKey} = remoteEvent;
-            const eventType = type || action;
-            if (typeof eventType !== 'string') {
-                continue;
-            }
-
-            const lowerType = eventType.toLowerCase();
-
-            // Optimization: coalesce consecutive mousemove or wheel events.
-            // We only care about the latest position/scroll in a series of similar events.
-            if (lowerType === 'mousemove' || lowerType === 'move' || lowerType === 'wheel' || lowerType === 'scroll') {
-                while (this.remoteControlEventQueue.length > 0) {
-                    const nextEvent = this.remoteControlEventQueue[0];
-                    const nextType = (nextEvent?.type || nextEvent?.action || '').toLowerCase();
-                    if (['mousemove', 'move'].includes(lowerType) && ['mousemove', 'move'].includes(nextType)) {
-                        this.remoteControlEventQueue.shift();
-                        Object.assign(remoteEvent, nextEvent);
-                    } else if (['wheel', 'scroll'].includes(lowerType) && ['wheel', 'scroll'].includes(nextType)) {
-                        this.remoteControlEventQueue.shift();
-                        remoteEvent.deltaX = (remoteEvent.deltaX || 0) + (nextEvent.deltaX || 0);
-                        remoteEvent.deltaY = (remoteEvent.deltaY || 0) + (nextEvent.deltaY || 0);
-                    } else {
-                        break;
-                    }
-                }
-            }
-
-            // Re-fetch type/x/y after potential coalescing
-            const finalType = (remoteEvent.type || remoteEvent.action).toLowerCase();
-            const finalX = remoteEvent.x;
-            const finalY = remoteEvent.y;
-
-            // Throttle mousemove events to prevent flooding nut-js and freezing screen capture
-            if (finalType === 'mousemove' || finalType === 'move') {
-                const now = Date.now();
-                if (now - this.lastMouseMoveProcess < 120) {
-                    continue;
-                }
-                this.lastMouseMoveProcess = now;
-            }
-
-            if (!this.warnedWayland && process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland') {
-                log.warn('handleSendRemoteControlEvent: Wayland detected. Mouse control might not work. X11 is recommended.');
-                this.warnedWayland = true;
-            }
-
-            if (!this.checkAccessibilityPermissions()) {
-                log.warn('handleSendRemoteControlEvent: missing accessibility permissions');
-                if (process.platform === 'darwin') {
-                    // eslint-disable-next-line no-await-in-loop
-                    const {response} = await dialog.showMessageBox({
-                        type: 'warning',
-                        title: localizeMessage('callsWidgetWindow.accessibilityRequired.title', 'Accessibility Permission Required'),
-                        message: localizeMessage('callsWidgetWindow.accessibilityRequired.message', 'Remote control requires Accessibility permissions to move the mouse and type. Would you like to open System Settings to grant them?'),
-                        buttons: [
-                            localizeMessage('label.cancel', 'Cancel'),
-                            localizeMessage('label.openSettings', 'Open Settings'),
-                        ],
-                        defaultId: 1,
-                    });
-
-                    if (response === 1) {
-                        shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
-                    }
-                }
-                this.remoteControlEventQueue = [];
-                break;
-            }
-
-            // Only log non-move events to reduce overhead (mousemove floods logs)
-            if (finalType !== 'mousemove' && finalType !== 'move') {
-                log.debug('handleSendRemoteControlEvent', remoteEvent);
-            }
-
-            const eventStartTime = Date.now();
-
-            try {
-                if (['mousedown', 'mouseup', 'mousemove', 'click', 'move'].includes(finalType)) {
-                    // Use cached target display to avoid calling screen.getAllDisplays() on every event
-                    let targetDisplay = this.cachedTargetDisplay || screen.getPrimaryDisplay();
-                    if (!this.sharedDisplayID && !this.sharedSourceID) {
-                        targetDisplay = screen.getPrimaryDisplay();
-                        this.cachedTargetDisplay = targetDisplay;
-                    }
-                    if (!this.cachedTargetDisplay) {
-                        // First time: resolve and cache the target display
-                        targetDisplay = screen.getPrimaryDisplay();
-                        if (this.sharedDisplayID) {
-                            const displays = screen.getAllDisplays();
-                            const matchedDisplay = displays.find((d: any) => d.id === this.sharedDisplayID);
-                            if (matchedDisplay) {
-                                targetDisplay = matchedDisplay;
-                                log.debug('handleSendRemoteControlEvent: cached sharedDisplayID', {sharedDisplayID: this.sharedDisplayID, matchedID: matchedDisplay.id});
-                            } else {
-                                log.warn('handleSendRemoteControlEvent: sharedDisplayID not found', this.sharedDisplayID);
-                            }
-                        } else if (this.sharedSourceID?.startsWith('screen:')) {
-                            const screenID = this.sharedSourceID.split(':')[1];
-                            const displays = screen.getAllDisplays();
-                            let sharedDisplay = displays.find((d: any) => d.id.toString() === screenID);
-                            if (!sharedDisplay) {
-                                const screenIndex = parseInt(screenID, 10);
-                                if (!isNaN(screenIndex) && screenIndex >= 0 && screenIndex < displays.length) {
-                                    sharedDisplay = displays[screenIndex];
-                                }
-                            }
-                            if (sharedDisplay) {
-                                targetDisplay = sharedDisplay;
-                            }
-                        }
-                        this.cachedTargetDisplay = targetDisplay;
-                    }
-                    const {width, height, x: displayX, y: displayY} = targetDisplay.bounds;
-
-                    // For mouseup without valid coordinates, skip setPosition (cursor is already in place from last mousemove)
-                    const hasValidCoords = (typeof finalX === 'number' && finalX >= 0) || (typeof finalY === 'number' && finalY >= 0);
-                    if (hasValidCoords) {
-                        let targetX = Math.round(((finalX || 0) * width) + displayX);
-                        let targetY = Math.round(((finalY || 0) * height) + displayY);
-
-                        if (process.platform !== 'darwin') {
-                            targetX *= targetDisplay.scaleFactor;
-                            targetY *= targetDisplay.scaleFactor;
-                        }
-
-                        if (finalType !== 'mousemove' && finalType !== 'move') {
-                            log.debug('handleSendRemoteControlEvent: mapping mouse', {x: finalX, y: finalY, targetX, targetY, width, height, displayX, displayY, sharedSourceID: this.sharedSourceID, scaleFactor: targetDisplay.scaleFactor});
-                        }
-
-                        const moveStart = Date.now();
-                        // eslint-disable-next-line no-await-in-loop
-                        await mouse.setPosition(new Point(targetX, targetY));
-                        const moveDuration = Date.now() - moveStart;
-
-                        // Diagnostic: log if nut-js operation took too long (indicates main process was busy)
-                        if (moveDuration > 50) {
-                            log.warn('handleSendRemoteControlEvent: SLOW mouse.setPosition', {
-                                type: finalType,
-                                duration_ms: moveDuration,
-                            });
-                        }
-
-                        // Yield to event loop after mouse.setPosition to allow screen capture to update
-                        // This is critical: nut-js blocks the main thread, preventing video frames from rendering
-                        // eslint-disable-next-line no-await-in-loop
-                        await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
-                    }
-
-                    if (finalType === 'mousedown' || finalType === 'mouseup' || finalType === 'click') {
-                        const buttons: Record<string | number, Button> = {
-                            0: Button.LEFT,
-                            1: Button.MIDDLE,
-                            2: Button.RIGHT,
-                            left: Button.LEFT,
-                            middle: Button.MIDDLE,
-                            right: Button.RIGHT,
-                        };
-                        log.debug('handleSendRemoteControlEvent: mouse click event', {button, buttonType: typeof button, finalType});
-
-                        // Ensure button is a valid index; default to left if undefined/null
-                        const btnKey = button ?? 0;
-                        const nutButton = buttons[btnKey] ?? buttons[btnKey.toString().toLowerCase()] ?? Button.LEFT;
-                        log.debug('handleSendRemoteControlEvent: mapped button', {btnKey, nutButton: nutButton.toString()});
-                        if (finalType === 'click') {
-                            // eslint-disable-next-line no-await-in-loop
-                            await mouse.click(nutButton);
-                        } else if (finalType === 'mousedown') {
-                            // eslint-disable-next-line no-await-in-loop
-                            await mouse.pressButton(nutButton);
-                        } else {
-                            // eslint-disable-next-line no-await-in-loop
-                            await mouse.releaseButton(nutButton);
-                        }
-                        // Yield to event loop after click/press/release to allow video rendering
-                        // eslint-disable-next-line no-await-in-loop
-                        await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
-                    }
-                } else if (['keydown', 'keyup', 'key'].includes(finalType)) {
-                    const modifiers: Key[] = [];
-                    if (ctrlKey) {
-                        modifiers.push(Key.LeftControl);
-                    }
-                    if (shiftKey) {
-                        modifiers.push(Key.LeftShift);
-                    }
-                    if (altKey) {
-                        modifiers.push(Key.LeftAlt);
-                    }
-                    if (metaKey) {
-                        modifiers.push(Key.LeftSuper);
-                    }
-
-                    // Map standard JS keys to nut.js Keys if necessary.
-                    // This is a simplified mapping, might need more coverage.
-                    const keyMap: Record<string, Key> = {
-                        Enter: Key.Return,
-                        Escape: Key.Escape,
-                        Backspace: Key.Backspace,
-                        Tab: Key.Tab,
-                        Space: Key.Space,
-                        ArrowUp: Key.Up,
-                        ArrowDown: Key.Down,
-                        ArrowLeft: Key.Left,
-                        ArrowRight: Key.Right,
-                        Control: Key.LeftControl,
-                        Shift: Key.LeftShift,
-                        Alt: Key.LeftAlt,
-                        Meta: Key.LeftSuper,
-                        Delete: Key.Delete,
-                        Home: Key.Home,
-                        End: Key.End,
-                        PageUp: Key.PageUp,
-                        PageDown: Key.PageDown,
-                        Insert: Key.Insert,
-                        CapsLock: Key.CapsLock,
-                    };
-
-                    // Add mapping for Digits
-                    for (let i = 0; i <= 9; i++) {
-                        keyMap[i.toString()] = (Key as any)[`Num${i}`];
-                    }
-
-                    log.debug('handleSendRemoteControlEvent: keyboard event', {key, code, keyType: typeof key, finalType});
-
-                    let nutKey = keyMap[key] || (Key as any)[key] || (Key as any)[code];
-
-                    // If key is a single character (e.g. 'a'), try uppercase ('A') and lowercase
-                    if (!nutKey && key && key.length === 1) {
-                        const upperKey = key.toUpperCase();
-                        nutKey = (Key as any)[upperKey] || (Key as any)[key];
-                    }
-
-                    // Handle code like 'KeyA' by stripping 'Key' prefix
-                    if (!nutKey && code && typeof code === 'string' && code.startsWith('Key')) {
-                        const codeLetter = code.substring(3);
-                        nutKey = (Key as any)[codeLetter];
-                    }
-
-                    log.debug('handleSendRemoteControlEvent: mapped key', {key, code, nutKey: nutKey?.toString() || 'undefined'});
-
-                    if (nutKey) {
-                        const filteredModifiers = modifiers.filter((m) => m !== nutKey);
-                        if (finalType === 'keydown' || finalType === 'key') {
-                            if (filteredModifiers.length > 0) {
-                                // eslint-disable-next-line no-await-in-loop
-                                await keyboard.pressKey(...filteredModifiers, nutKey);
-                            } else {
-                                // eslint-disable-next-line no-await-in-loop
-                                await keyboard.pressKey(nutKey);
-                            }
-
-                            // Yield to event loop after pressKey to allow video rendering
-                            // eslint-disable-next-line no-await-in-loop
-                            await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
-
-                            if (finalType === 'key') {
-                                if (filteredModifiers.length > 0) {
-                                    // eslint-disable-next-line no-await-in-loop
-                                    await keyboard.releaseKey(...filteredModifiers, nutKey);
-                                } else {
-                                    // eslint-disable-next-line no-await-in-loop
-                                    await keyboard.releaseKey(nutKey);
-                                }
-                            }
-                        } else if (filteredModifiers.length > 0) {
-                            // eslint-disable-next-line no-await-in-loop
-                            await keyboard.releaseKey(...filteredModifiers, nutKey);
-                        } else {
-                            // eslint-disable-next-line no-await-in-loop
-                            await keyboard.releaseKey(nutKey);
-                        }
-                        // Yield to event loop after keyboard operation to allow video rendering
-                        // eslint-disable-next-line no-await-in-loop
-                        await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
-                    }
-                } else if (finalType === 'wheel' || finalType === 'scroll') {
-                    if (deltaY > 0) {
-                        // eslint-disable-next-line no-await-in-loop
-                        await mouse.scrollDown(Math.abs(deltaY));
-                    } else if (deltaY < 0) {
-                        // eslint-disable-next-line no-await-in-loop
-                        await mouse.scrollUp(Math.abs(deltaY));
-                    }
-
-                    if (deltaX > 0) {
-                        // eslint-disable-next-line no-await-in-loop
-                        await mouse.scrollRight(Math.abs(deltaX));
-                    } else if (deltaX < 0) {
-                        // eslint-disable-next-line no-await-in-loop
-                        await mouse.scrollLeft(Math.abs(deltaX));
-                    }
-                    // Yield to event loop after scroll to allow video rendering
-                    // eslint-disable-next-line no-await-in-loop
-                    await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
-                }
-                const totalDuration = Date.now() - eventStartTime;
-                // Diagnostic: log total event processing time for non-move events
-                if (finalType !== 'mousemove' && finalType !== 'move') {
-                    log.debug('handleSendRemoteControlEvent: success', {type: finalType, total_ms: totalDuration});
-                }
-                // Diagnostic: warn if total event processing exceeded 100ms (causes frame drops)
-                if (totalDuration > 100) {
-                    log.warn('handleSendRemoteControlEvent: EVENT TOO SLOW - may cause screen freeze', {
-                        type: finalType,
-                        total_ms: totalDuration,
-                        note: 'If this happens frequently, screen capture will freeze',
-                    });
-                }
-            } catch (e) {
-                log.error('Failed to send system input event', e);
-            }
-
-            // Important: Yield to event loop between events in the queue to allow screen capture and other Electron tasks to run.
-            // eslint-disable-next-line no-await-in-loop
-            await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
         }
 
         this.isProcessingQueue = false;
+    };
+
+    private executeRemoteControlEvent = async (remoteEvent: any) => {
+        const {type, action, x, y, button, key, code, deltaX, deltaY, ctrlKey, shiftKey, altKey, metaKey} = remoteEvent;
+        const eventType = type || action;
+        if (typeof eventType !== 'string') {
+            return;
+        }
+
+        const lowerType = eventType.toLowerCase();
+
+        const uioKeyMap: Record<string, number> = {
+            Enter: UiohookKey.Enter,
+            Escape: UiohookKey.Escape,
+            Backspace: UiohookKey.Backspace,
+            Tab: UiohookKey.Tab,
+            Space: UiohookKey.Space,
+            ArrowUp: UiohookKey.ArrowUp,
+            ArrowDown: UiohookKey.ArrowDown,
+            ArrowLeft: UiohookKey.ArrowLeft,
+            ArrowRight: UiohookKey.ArrowRight,
+            Control: UiohookKey.Ctrl,
+            Shift: UiohookKey.Shift,
+            Alt: UiohookKey.Alt,
+            Meta: UiohookKey.Meta,
+            Delete: UiohookKey.Delete,
+            Home: UiohookKey.Home,
+            End: UiohookKey.End,
+            PageUp: UiohookKey.PageUp,
+            PageDown: UiohookKey.PageDown,
+            Insert: UiohookKey.Insert,
+            CapsLock: UiohookKey.CapsLock,
+            Semicolon: UiohookKey.Semicolon,
+            Equal: UiohookKey.Equal,
+            Comma: UiohookKey.Comma,
+            Minus: UiohookKey.Minus,
+            Period: UiohookKey.Period,
+            Slash: UiohookKey.Slash,
+            Backquote: UiohookKey.Backquote,
+            BracketLeft: UiohookKey.BracketLeft,
+            Backslash: UiohookKey.Backslash,
+            BracketRight: UiohookKey.BracketRight,
+            Quote: UiohookKey.Quote,
+        };
+
+        if (!this.warnedWayland && process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland') {
+            log.warn('handleSendRemoteControlEvent: Wayland detected. Mouse control might not work. X11 is recommended.');
+            this.warnedWayland = true;
+        }
+
+        if (!this.checkAccessibilityPermissions()) {
+            log.warn('handleSendRemoteControlEvent: missing accessibility permissions');
+            if (process.platform === 'darwin') {
+                const {response} = await dialog.showMessageBox({
+                    type: 'warning',
+                    title: localizeMessage('callsWidgetWindow.accessibilityRequired.title', 'Accessibility Permission Required'),
+                    message: localizeMessage('callsWidgetWindow.accessibilityRequired.message', 'Remote control requires Accessibility permissions to move the mouse and type. Would you like to open System Settings to grant them?'),
+                    buttons: [
+                        localizeMessage('label.cancel', 'Cancel'),
+                        localizeMessage('label.openSettings', 'Open Settings'),
+                    ],
+                    defaultId: 1,
+                });
+
+                if (response === 1) {
+                    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+                }
+            }
+            this.remoteControlEventQueue = [];
+            this.pendingMouseMove = undefined;
+            return;
+        }
+
+        try {
+            if (['mousedown', 'mouseup', 'mousemove', 'click', 'move'].includes(lowerType)) {
+                let targetDisplay = this.cachedTargetDisplay;
+                if (!targetDisplay) {
+                    targetDisplay = screen.getPrimaryDisplay();
+                    if (this.sharedDisplayID) {
+                        const displays = screen.getAllDisplays();
+                        const matchedDisplay = displays.find((d: any) => d.id === this.sharedDisplayID);
+                        if (matchedDisplay) {
+                            targetDisplay = matchedDisplay;
+                        }
+                    } else if (this.sharedSourceID?.startsWith('screen:')) {
+                        const screenID = this.sharedSourceID.split(':')[1];
+                        const displays = screen.getAllDisplays();
+                        let sharedDisplay = displays.find((d: any) => d.id.toString() === screenID);
+                        if (!sharedDisplay) {
+                            const screenIndex = parseInt(screenID, 10);
+                            if (!isNaN(screenIndex) && screenIndex >= 0 && screenIndex < displays.length) {
+                                sharedDisplay = displays[screenIndex];
+                            }
+                        }
+                        if (sharedDisplay) {
+                            targetDisplay = sharedDisplay;
+                        }
+                    }
+                    this.cachedTargetDisplay = targetDisplay;
+                }
+                const {width, height, x: displayX, y: displayY} = targetDisplay.bounds;
+
+                const hasValidCoords = (typeof x === 'number' && x >= 0) || (typeof y === 'number' && y >= 0);
+                if (hasValidCoords) {
+                    let targetX = Math.round(((x || 0) * width) + displayX);
+                    let targetY = Math.round(((y || 0) * height) + displayY);
+
+                    if (process.platform !== 'darwin') {
+                        targetX *= targetDisplay.scaleFactor;
+                        targetY *= targetDisplay.scaleFactor;
+                    }
+
+                    uIOhook.moveMouse(targetX, targetY);
+                }
+
+                if (lowerType === 'mousedown' || lowerType === 'mouseup' || lowerType === 'click') {
+                    const buttons: Record<string | number, number> = {
+                        0: 1,
+                        1: 3,
+                        2: 2,
+                        left: 1,
+                        middle: 3,
+                        right: 2,
+                    };
+                    const btnKey = button ?? 0;
+                    const uioButton = buttons[btnKey] ?? buttons[btnKey.toString().toLowerCase()] ?? 1;
+
+                    if (lowerType === 'click') {
+                        uIOhook.clickMouse(uioButton);
+                    } else if (lowerType === 'mousedown') {
+                        uIOhook.pressMouse(uioButton);
+                    } else {
+                        uIOhook.releaseMouse(uioButton);
+                    }
+                }
+            } else if (['keydown', 'keyup', 'key'].includes(lowerType)) {
+                const modifiers: number[] = [];
+                if (ctrlKey) {
+                    modifiers.push(UiohookKey.Ctrl);
+                }
+                if (shiftKey) {
+                    modifiers.push(UiohookKey.Shift);
+                }
+                if (altKey) {
+                    modifiers.push(UiohookKey.Alt);
+                }
+                if (metaKey) {
+                    modifiers.push(UiohookKey.Meta);
+                }
+
+                let uioKey = uioKeyMap[key] || uioKeyMap[code] || (UiohookKey as any)[key] || (UiohookKey as any)[code?.replace('Key', '')];
+                if (!uioKey && key && key.length === 1) {
+                    uioKey = (UiohookKey as any)[key.toUpperCase()];
+                }
+
+                if (uioKey) {
+                    const filteredModifiers = modifiers.filter((m) => m !== uioKey);
+                    if (lowerType === 'keydown' || lowerType === 'key') {
+                        for (const mod of filteredModifiers) {
+                            uIOhook.keyToggle(mod, 'down');
+                        }
+                        uIOhook.keyToggle(uioKey, 'down');
+
+                        if (lowerType === 'key') {
+                            uIOhook.keyToggle(uioKey, 'up');
+                            for (const mod of filteredModifiers) {
+                                uIOhook.keyToggle(mod, 'up');
+                            }
+                        }
+                    } else {
+                        uIOhook.keyToggle(uioKey, 'up');
+                        for (const mod of filteredModifiers) {
+                            uIOhook.keyToggle(mod, 'up');
+                        }
+                    }
+                }
+            } else if (lowerType === 'wheel' || lowerType === 'scroll') {
+                if (deltaY !== 0) {
+                    uIOhook.scrollMouse(0, deltaY);
+                }
+                if (deltaX !== 0) {
+                    uIOhook.scrollMouse(deltaX, 0);
+                }
+            }
+        } catch (e) {
+            log.error('Failed to execute remote control event', e);
+        }
     };
 
     private handleGetDesktopSources = async (event: IpcMainInvokeEvent, opts: Electron.SourcesOptions) => {

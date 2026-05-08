@@ -15,8 +15,7 @@ module.exports = merge(base, {
         'macos-notification-state': 'require("macos-notification-state")',
         'windows-focus-assist': 'require("windows-focus-assist")',
         'registry-js': 'require("registry-js")',
-        '@nut-tree-fork/nut-js': 'require("@nut-tree-fork/nut-js")',
-        '@nut-tree-fork/libnut': 'require("@nut-tree-fork/libnut")',
+        'uiohook-napi': 'require("uiohook-napi")',
         bindings: 'require("bindings")',
     },
     externalsPresets: {
