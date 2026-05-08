@@ -21,6 +21,7 @@
     "node_modules/macos-notification-state/**/*",
     "node_modules/windows-focus-assist/**/*",
     "node_modules/registry-js/**/*",
+    "node_modules/uiohook-napi/**/*",
     "node_modules/@nut-tree-fork/**/*",
     "node_modules/jimp/**/*",
     "node_modules/@jimp/**/*",
@@ -193,6 +194,7 @@
     "./node_modules/macos-notification-state/build/Release/**/*.node",
     "./node_modules/windows-focus-assist/build/Release/**/*.node",
     "./node_modules/registry-js/build/Release/**/*.node",
+    "./node_modules/uiohook-napi/prebuilds/**/*.node",
     "./node_modules/@nut-tree-fork/libnut-win32/build/Release/**/*.node",
     "./node_modules/@nut-tree-fork/libnut-darwin/build/Release/**/*.node",
     "./node_modules/@nut-tree-fork/libnut-linux/build/Release/**/*.node"

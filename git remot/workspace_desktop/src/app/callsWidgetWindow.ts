@@ -1,10 +1,11 @@
 // Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {mouse, Button, Point} from '@nut-tree-fork/nut-js';
-import {uIOhook, UiohookKey} from 'uiohook-napi';
 import type {IpcMainEvent, Rectangle, Event, IpcMainInvokeEvent} from 'electron';
 import {BrowserWindow, desktopCapturer, dialog, ipcMain, systemPreferences, screen, shell} from 'electron';
+
+import {mouse, Button, Point} from '@nut-tree-fork/nut-js';
+import {uIOhook, UiohookKey} from 'uiohook-napi';
 
 import MainWindow from 'app/mainWindow/mainWindow';
 import NavigationManager from 'app/navigationManager';
@@ -116,6 +117,8 @@ export class CallsWidgetWindow {
     };
 
     constructor() {
+        mouse.config.autoDelayMs = 0;
+
         ipcMain.on(CALLS_WIDGET_RESIZE, this.handleResize);
         ipcMain.on(CALLS_WIDGET_SHARE_SCREEN, this.handleShareScreen);
         ipcMain.on(CALLS_POPOUT_FOCUS, this.handlePopOutFocus);
@@ -798,6 +801,11 @@ export class CallsWidgetWindow {
                     if (process.platform !== 'darwin') {
                         targetX *= targetDisplay.scaleFactor;
                         targetY *= targetDisplay.scaleFactor;
+                    }
+
+                    // Check session one last time before moving
+                    if (!this.remoteControlAllowedForSession) {
+                        return;
                     }
 
                     await mouse.setPosition(new Point(targetX, targetY));
