@@ -53,7 +53,7 @@ describe('CallRecordingsSection', () => {
         renderComponent();
 
         expect(screen.getByText('Call recordings')).toBeInTheDocument();
-        expect(screen.getByText('Recordings include the entire call window view along with participants’ audio track and any shared screen video. Recordings are stored in Mattermost')).toBeInTheDocument();
+        expect(screen.getByText('تشمل التسجيلات عرض نافذة المكالمة بالكامل مع المسار الصوتي للمشاركين وأي فيديو لشاشة مشتركة. يتم تخزين التسجيلات في مساحة العمل')).toBeInTheDocument();
         expect(screen.getByTestId('setting1')).toBeInTheDocument();
         expect(screen.getByTestId('setting2')).toBeInTheDocument();
     });
