@@ -31,6 +31,63 @@ import {
 
 import {CallsWidgetWindow} from './callsWidgetWindow';
 
+jest.mock('@nut-tree-fork/nut-js', () => ({
+    mouse: {
+        setPosition: jest.fn(),
+        click: jest.fn(),
+        pressButton: jest.fn(),
+        releaseButton: jest.fn(),
+        scrollDown: jest.fn(),
+        scrollUp: jest.fn(),
+        scrollLeft: jest.fn(),
+        scrollRight: jest.fn(),
+    },
+    keyboard: {
+        pressKey: jest.fn(),
+        releaseKey: jest.fn(),
+    },
+    Point: jest.fn(),
+    Button: {
+        LEFT: 0,
+        MIDDLE: 1,
+        RIGHT: 2,
+    },
+    Key: {
+        Return: 0,
+        Escape: 1,
+        Backspace: 2,
+        Tab: 3,
+        Space: 4,
+        Up: 5,
+        Down: 6,
+        Left: 7,
+        Right: 8,
+        LeftControl: 9,
+        LeftShift: 10,
+        LeftAlt: 11,
+        LeftSuper: 12,
+        Delete: 13,
+        Home: 14,
+        End: 15,
+        PageUp: 16,
+        PageDown: 17,
+        Insert: 18,
+        CapsLock: 19,
+    },
+}));
+
+jest.mock('uiohook-napi', () => ({
+    UiohookKey: {
+        Ctrl: 29,
+        Shift: 42,
+        Alt: 56,
+        Meta: 3675,
+    },
+    uIOhook: {
+        keyToggle: jest.fn(),
+    },
+}));
+
 jest.mock('electron', () => ({
     app: {
         getAppPath: () => '/path/to/app',
@@ -45,6 +102,16 @@ jest.mock('electron', () => ({
     },
     desktopCapturer: {
         getSources: jest.fn(),
+    },
+    screen: {
+        getAllDisplays: jest.fn(() => []),
+        getPrimaryDisplay: jest.fn(() => ({
+            id: 'primary-display',
+            bounds: {x: 0, y: 0, width: 1920, height: 1080},
+            scaleFactor: 1,
+        })),
+        getCursorScreenPoint: jest.fn(() => ({x: 0, y: 0})),
+        getDisplayNearestPoint: jest.fn(() => ({id: 'primary-display', bounds: {x: 0, y: 0, width: 1920, height: 1080}, scaleFactor: 1})),
     },
     systemPreferences: {
         getUserDefault: jest.fn(),
@@ -857,9 +924,15 @@ describe('main/windows/callsWidgetWindow', () => {
             expect(sources).toEqual([
                 {
                     id: 'screen0',
+                    name: undefined,
+                    screenID: '',
+                    thumbnailURL: undefined,
                 },
                 {
                     id: 'window0',
+                    name: undefined,
+                    screenID: '',
+                    thumbnailURL: undefined,
                 },
             ]);
         });
@@ -884,9 +957,15 @@ describe('main/windows/callsWidgetWindow', () => {
             expect(sources).toEqual([
                 {
                     id: 'screen0',
+                    name: undefined,
+                    screenID: '',
+                    thumbnailURL: undefined,
                 },
                 {
                     id: 'window0',
+                    name: undefined,
+                    screenID: '',
+                    thumbnailURL: undefined,
                 },
             ]);
         });

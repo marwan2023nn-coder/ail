@@ -17,6 +17,7 @@ module.exports = merge(base, {
         'registry-js': 'require("registry-js")',
         '@nut-tree-fork/nut-js': 'require("@nut-tree-fork/nut-js")',
         '@nut-tree-fork/libnut': 'require("@nut-tree-fork/libnut")',
+        'uiohook-napi': 'require("uiohook-napi")',
         bindings: 'require("bindings")',
     },
     externalsPresets: {

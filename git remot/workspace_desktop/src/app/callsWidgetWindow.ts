@@ -1,7 +1,8 @@
 // Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {mouse, keyboard, Button, Key, Point} from '@nut-tree-fork/nut-js';
+import {mouse, Button, Point} from '@nut-tree-fork/nut-js';
+import {uIOhook, UiohookKey} from 'uiohook-napi';
 import type {IpcMainEvent, Rectangle, Event, IpcMainInvokeEvent} from 'electron';
 import {BrowserWindow, desktopCapturer, dialog, ipcMain, systemPreferences, screen, shell} from 'electron';
 
@@ -58,6 +59,40 @@ import type {
 
 const log = new Logger('CallsWidgetWindow');
 
+const uioKeyMap: Record<string, number> = {
+    Enter: UiohookKey.Enter,
+    Escape: UiohookKey.Escape,
+    Backspace: UiohookKey.Backspace,
+    Tab: UiohookKey.Tab,
+    Space: UiohookKey.Space,
+    ArrowUp: UiohookKey.ArrowUp,
+    ArrowDown: UiohookKey.ArrowDown,
+    ArrowLeft: UiohookKey.ArrowLeft,
+    ArrowRight: UiohookKey.ArrowRight,
+    Control: UiohookKey.Ctrl,
+    Shift: UiohookKey.Shift,
+    Alt: UiohookKey.Alt,
+    Meta: UiohookKey.Meta,
+    Delete: UiohookKey.Delete,
+    Home: UiohookKey.Home,
+    End: UiohookKey.End,
+    PageUp: UiohookKey.PageUp,
+    PageDown: UiohookKey.PageDown,
+    Insert: UiohookKey.Insert,
+    CapsLock: UiohookKey.CapsLock,
+    Semicolon: UiohookKey.Semicolon,
+    Equal: UiohookKey.Equal,
+    Comma: UiohookKey.Comma,
+    Minus: UiohookKey.Minus,
+    Period: UiohookKey.Period,
+    Slash: UiohookKey.Slash,
+    Backquote: UiohookKey.Backquote,
+    BracketLeft: UiohookKey.BracketLeft,
+    Backslash: UiohookKey.Backslash,
+    BracketRight: UiohookKey.BracketRight,
+    Quote: UiohookKey.Quote,
+};
+
 export class CallsWidgetWindow {
     private win?: BrowserWindow;
     private mainView?: MattermostWebContentsView;
@@ -68,6 +103,9 @@ export class CallsWidgetWindow {
     private sharedDisplayID?: number;
     private warnedWayland?: boolean;
     private remoteControlAllowedForSession?: boolean;
+    private remoteControlEventQueue: any[] = [];
+    private isProcessingQueue = false;
+    private cachedTargetDisplay?: any;
 
     private popOut?: BrowserWindow;
     private boundsErr: Rectangle = {
@@ -78,9 +116,6 @@ export class CallsWidgetWindow {
     };
 
     constructor() {
-        mouse.config.autoDelayMs = 0;
-        keyboard.config.autoDelayMs = 0;
-
         ipcMain.on(CALLS_WIDGET_RESIZE, this.handleResize);
         ipcMain.on(CALLS_WIDGET_SHARE_SCREEN, this.handleShareScreen);
         ipcMain.on(CALLS_POPOUT_FOCUS, this.handlePopOutFocus);
@@ -268,6 +303,8 @@ export class CallsWidgetWindow {
         delete this.sharedSourceID;
         delete this.sharedDisplayID;
         this.remoteControlAllowedForSession = false;
+        this.remoteControlEventQueue = [];
+        this.isProcessingQueue = false;
     };
 
     private onNavigate = (ev: Event, url: string) => {
@@ -443,10 +480,9 @@ export class CallsWidgetWindow {
 
         // Determine which display the shared source is on
         this.sharedDisplayID = undefined;
-        (this as any).cachedTargetDisplay = undefined;
-        (this as any).isProcessingInput = false;
-        (this as any).pendingMoveX = undefined;
-        (this as any).pendingMoveY = undefined;
+        this.cachedTargetDisplay = undefined;
+        this.remoteControlEventQueue = [];
+        this.isProcessingQueue = false;
         const displays = screen.getAllDisplays();
 
         // First priority: use screenID passed from the webapp (computed at source selection time)
@@ -607,9 +643,10 @@ export class CallsWidgetWindow {
     private handleRemoteControlTerminateSession = () => {
         log.debug('handleRemoteControlTerminateSession');
         this.remoteControlAllowedForSession = false;
+        this.remoteControlEventQueue = [];
     };
 
-    private handleSendRemoteControlEvent = async (ev: IpcMainEvent, remoteEvent: any) => {
+    private handleSendRemoteControlEvent = (ev: IpcMainEvent, remoteEvent: any) => {
         if (!this.mainView || this.mainView.isDestroyed()) {
             return;
         }
@@ -624,6 +661,73 @@ export class CallsWidgetWindow {
             return;
         }
 
+        if (typeof remoteEvent !== 'object' || remoteEvent === null) {
+            return;
+        }
+
+        const type = (remoteEvent.type || remoteEvent.action || '').toLowerCase();
+        if (type === 'mousemove' || type === 'move') {
+            // Tail-coalescing: if last event in queue is mousemove, replace it.
+            const lastIdx = this.remoteControlEventQueue.length - 1;
+            if (lastIdx >= 0) {
+                const lastEvent = this.remoteControlEventQueue[lastIdx];
+                const lastType = (lastEvent.type || lastEvent.action || '').toLowerCase();
+                if (lastType === 'mousemove' || lastType === 'move') {
+                    this.remoteControlEventQueue[lastIdx] = remoteEvent;
+                } else {
+                    this.remoteControlEventQueue.push(remoteEvent);
+                }
+            } else {
+                this.remoteControlEventQueue.push(remoteEvent);
+            }
+        } else {
+            this.remoteControlEventQueue.push(remoteEvent);
+        }
+
+        if (this.isProcessingQueue) {
+            return;
+        }
+
+        this.processRemoteControlQueue();
+    };
+
+    private processRemoteControlQueue = async () => {
+        this.isProcessingQueue = true;
+
+        while (this.remoteControlEventQueue.length > 0) {
+            // Immediately stop processing if session was terminated.
+            if (!this.remoteControlAllowedForSession) {
+                this.remoteControlEventQueue = [];
+                break;
+            }
+
+            const remoteEvent = this.remoteControlEventQueue.shift();
+            if (!remoteEvent) {
+                continue;
+            }
+
+            // eslint-disable-next-line no-await-in-loop
+            await this.executeRemoteControlEvent(remoteEvent);
+
+            // Yield to event loop between each operation.
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((resolve) => {
+                setImmediate(resolve);
+            });
+        }
+
+        this.isProcessingQueue = false;
+    };
+
+    private executeRemoteControlEvent = async (remoteEvent: any) => {
+        const {type, action, x, y, button, key, code, deltaX, deltaY, ctrlKey, shiftKey, altKey, metaKey} = remoteEvent;
+        const eventType = type || action;
+        if (typeof eventType !== 'string') {
+            return;
+        }
+
+        const lowerType = eventType.toLowerCase();
+
         if (!this.warnedWayland && process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland') {
             log.warn('handleSendRemoteControlEvent: Wayland detected. Mouse control might not work. X11 is recommended.');
             this.warnedWayland = true;
@@ -632,6 +736,7 @@ export class CallsWidgetWindow {
         if (!this.checkAccessibilityPermissions()) {
             log.warn('handleSendRemoteControlEvent: missing accessibility permissions');
             if (process.platform === 'darwin') {
+                // eslint-disable-next-line no-await-in-loop
                 const {response} = await dialog.showMessageBox({
                     type: 'warning',
                     title: localizeMessage('callsWidgetWindow.accessibilityRequired.title', 'Accessibility Permission Required'),
@@ -647,66 +752,25 @@ export class CallsWidgetWindow {
                     shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
                 }
             }
+            this.remoteControlEventQueue = [];
             return;
         }
-
-        if (typeof remoteEvent !== 'object' || remoteEvent === null) {
-            return;
-        }
-
-        const {type, action, x, y, button, key, code, deltaX, deltaY, ctrlKey, shiftKey, altKey, metaKey} = remoteEvent;
-        const eventType = type || action;
-        if (typeof eventType !== 'string') {
-            return;
-        }
-
-        const lowerType = eventType.toLowerCase();
-
-        // Throttle mousemove events to prevent flooding nut-js and freezing screen capture
-        if (lowerType === 'mousemove' || lowerType === 'move') {
-            const now = Date.now();
-            if (now - (this as any).lastMouseMoveProcess < 120) {
-                return;
-            }
-            (this as any).lastMouseMoveProcess = now;
-        }
-
-        // Skip mousemove if a previous event is still being processed by nut-js
-        // This prevents concurrent mouse.setPosition() calls that freeze the main process
-        if ((lowerType === 'mousemove' || lowerType === 'move') && (this as any).isProcessingInput) {
-            // Save latest position so we can jump there after current operation finishes
-            (this as any).pendingMoveX = x;
-            (this as any).pendingMoveY = y;
-            return;
-        }
-
-        // Only log non-move events to reduce overhead (mousemove floods logs)
-        if (lowerType !== 'mousemove' && lowerType !== 'move') {
-            log.debug('handleSendRemoteControlEvent', remoteEvent);
-        }
-
-        (this as any).isProcessingInput = true;
-        const eventStartTime = Date.now();
 
         try {
             if (['mousedown', 'mouseup', 'mousemove', 'click', 'move'].includes(lowerType)) {
-                // Use cached target display to avoid calling screen.getAllDisplays() on every event
-                let targetDisplay = (this as any).cachedTargetDisplay || screen.getPrimaryDisplay();
-                if (!this.sharedDisplayID && !this.sharedSourceID) {
-                    targetDisplay = screen.getPrimaryDisplay();
-                    (this as any).cachedTargetDisplay = targetDisplay;
+                // Immediately check session before native call
+                if (!this.remoteControlAllowedForSession) {
+                    return;
                 }
-                if (!(this as any).cachedTargetDisplay) {
-                    // First time: resolve and cache the target display
+
+                let targetDisplay = this.cachedTargetDisplay;
+                if (!targetDisplay) {
                     targetDisplay = screen.getPrimaryDisplay();
                     if (this.sharedDisplayID) {
                         const displays = screen.getAllDisplays();
                         const matchedDisplay = displays.find((d: any) => d.id === this.sharedDisplayID);
                         if (matchedDisplay) {
                             targetDisplay = matchedDisplay;
-                            log.debug('handleSendRemoteControlEvent: cached sharedDisplayID', {sharedDisplayID: this.sharedDisplayID, matchedID: matchedDisplay.id});
-                        } else {
-                            log.warn('handleSendRemoteControlEvent: sharedDisplayID not found', this.sharedDisplayID);
                         }
                     } else if (this.sharedSourceID?.startsWith('screen:')) {
                         const screenID = this.sharedSourceID.split(':')[1];
@@ -722,11 +786,10 @@ export class CallsWidgetWindow {
                             targetDisplay = sharedDisplay;
                         }
                     }
-                    (this as any).cachedTargetDisplay = targetDisplay;
+                    this.cachedTargetDisplay = targetDisplay;
                 }
                 const {width, height, x: displayX, y: displayY} = targetDisplay.bounds;
 
-                // For mouseup without valid coordinates, skip setPosition (cursor is already in place from last mousemove)
                 const hasValidCoords = (typeof x === 'number' && x >= 0) || (typeof y === 'number' && y >= 0);
                 if (hasValidCoords) {
                     let targetX = Math.round(((x || 0) * width) + displayX);
@@ -737,29 +800,15 @@ export class CallsWidgetWindow {
                         targetY *= targetDisplay.scaleFactor;
                     }
 
-                    if (lowerType !== 'mousemove' && lowerType !== 'move') {
-                        log.debug('handleSendRemoteControlEvent: mapping mouse', {x, y, targetX, targetY, width, height, displayX, displayY, sharedSourceID: this.sharedSourceID, scaleFactor: targetDisplay.scaleFactor});
-                    }
-
-                    const moveStart = Date.now();
                     await mouse.setPosition(new Point(targetX, targetY));
-                    const moveDuration = Date.now() - moveStart;
-
-                    // Diagnostic: log if nut-js operation took too long (indicates main process was busy)
-                    if (moveDuration > 50) {
-                        log.warn('handleSendRemoteControlEvent: SLOW mouse.setPosition', {
-                            type: lowerType,
-                            duration_ms: moveDuration,
-                            isProcessingQueue: (this as any).isProcessingInput,
-                        });
-                    }
-
-                    // Yield to event loop after mouse.setPosition to allow screen capture to update
-                    // This is critical: nut-js blocks the main thread, preventing video frames from rendering
-                    await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
                 }
 
                 if (lowerType === 'mousedown' || lowerType === 'mouseup' || lowerType === 'click') {
+                    // Check session again
+                    if (!this.remoteControlAllowedForSession) {
+                        return;
+                    }
+
                     const buttons: Record<string | number, Button> = {
                         0: Button.LEFT,
                         1: Button.MIDDLE,
@@ -768,12 +817,9 @@ export class CallsWidgetWindow {
                         middle: Button.MIDDLE,
                         right: Button.RIGHT,
                     };
-                    log.debug('handleSendRemoteControlEvent: mouse click event', {button, buttonType: typeof button, lowerType});
-
-                    // Ensure button is a valid index; default to left if undefined/null
                     const btnKey = button ?? 0;
                     const nutButton = buttons[btnKey] ?? buttons[btnKey.toString().toLowerCase()] ?? Button.LEFT;
-                    log.debug('handleSendRemoteControlEvent: mapped button', {btnKey, nutButton: nutButton.toString()});
+
                     if (lowerType === 'click') {
                         await mouse.click(nutButton);
                     } else if (lowerType === 'mousedown') {
@@ -781,100 +827,59 @@ export class CallsWidgetWindow {
                     } else {
                         await mouse.releaseButton(nutButton);
                     }
-                    // Yield to event loop after click/press/release to allow video rendering
-                    await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
                 }
             } else if (['keydown', 'keyup', 'key'].includes(lowerType)) {
-                const modifiers: Key[] = [];
+                // Check session before native keyboard call
+                if (!this.remoteControlAllowedForSession) {
+                    return;
+                }
+
+                const modifiers: number[] = [];
                 if (ctrlKey) {
-                    modifiers.push(Key.LeftControl);
+                    modifiers.push(UiohookKey.Ctrl);
                 }
                 if (shiftKey) {
-                    modifiers.push(Key.LeftShift);
+                    modifiers.push(UiohookKey.Shift);
                 }
                 if (altKey) {
-                    modifiers.push(Key.LeftAlt);
+                    modifiers.push(UiohookKey.Alt);
                 }
                 if (metaKey) {
-                    modifiers.push(Key.LeftSuper);
+                    modifiers.push(UiohookKey.Meta);
                 }
 
-                // Map standard JS keys to nut.js Keys if necessary.
-                // This is a simplified mapping, might need more coverage.
-                const keyMap: Record<string, Key> = {
-                    Enter: Key.Return,
-                    Escape: Key.Escape,
-                    Backspace: Key.Backspace,
-                    Tab: Key.Tab,
-                    Space: Key.Space,
-                    ArrowUp: Key.Up,
-                    ArrowDown: Key.Down,
-                    ArrowLeft: Key.Left,
-                    ArrowRight: Key.Right,
-                    Control: Key.LeftControl,
-                    Shift: Key.LeftShift,
-                    Alt: Key.LeftAlt,
-                    Meta: Key.LeftSuper,
-                    Delete: Key.Delete,
-                    Home: Key.Home,
-                    End: Key.End,
-                    PageUp: Key.PageUp,
-                    PageDown: Key.PageDown,
-                    Insert: Key.Insert,
-                    CapsLock: Key.CapsLock,
-                };
-
-                // Add mapping for Digits
-                for (let i = 0; i <= 9; i++) {
-                    keyMap[i.toString()] = (Key as any)[`Num${i}`];
+                let uioKey = uioKeyMap[key] || uioKeyMap[code] || (UiohookKey as any)[key] || (UiohookKey as any)[code?.replace('Key', '')];
+                if (!uioKey && key && key.length === 1) {
+                    uioKey = (UiohookKey as any)[key.toUpperCase()];
                 }
 
-                log.debug('handleSendRemoteControlEvent: keyboard event', {key, code, keyType: typeof key, lowerType});
-
-                let nutKey = keyMap[key] || (Key as any)[key] || (Key as any)[code];
-
-                // If key is a single character (e.g. 'a'), try uppercase ('A') and lowercase
-                if (!nutKey && key && key.length === 1) {
-                    const upperKey = key.toUpperCase();
-                    nutKey = (Key as any)[upperKey] || (Key as any)[key];
-                }
-
-                // Handle code like 'KeyA' by stripping 'Key' prefix
-                if (!nutKey && code && typeof code === 'string' && code.startsWith('Key')) {
-                    const codeLetter = code.substring(3);
-                    nutKey = (Key as any)[codeLetter];
-                }
-
-                log.debug('handleSendRemoteControlEvent: mapped key', {key, code, nutKey: nutKey?.toString() || 'undefined'});
-
-                if (nutKey) {
-                    const filteredModifiers = modifiers.filter((m) => m !== nutKey);
+                if (uioKey) {
+                    const filteredModifiers = modifiers.filter((m) => m !== uioKey);
                     if (lowerType === 'keydown' || lowerType === 'key') {
-                        if (filteredModifiers.length > 0) {
-                            await keyboard.pressKey(...filteredModifiers, nutKey);
-                        } else {
-                            await keyboard.pressKey(nutKey);
+                        for (const mod of filteredModifiers) {
+                            uIOhook.keyToggle(mod, 'down');
                         }
-
-                        // Yield to event loop after pressKey to allow video rendering
-                        await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+                        uIOhook.keyToggle(uioKey, 'down');
 
                         if (lowerType === 'key') {
-                            if (filteredModifiers.length > 0) {
-                                await keyboard.releaseKey(...filteredModifiers, nutKey);
-                            } else {
-                                await keyboard.releaseKey(nutKey);
+                            uIOhook.keyToggle(uioKey, 'up');
+                            for (const mod of filteredModifiers) {
+                                uIOhook.keyToggle(mod, 'up');
                             }
                         }
-                    } else if (filteredModifiers.length > 0) {
-                        await keyboard.releaseKey(...filteredModifiers, nutKey);
                     } else {
-                        await keyboard.releaseKey(nutKey);
+                        uIOhook.keyToggle(uioKey, 'up');
+                        for (const mod of filteredModifiers) {
+                            uIOhook.keyToggle(mod, 'up');
+                        }
                     }
-                    // Yield to event loop after keyboard operation to allow video rendering
-                    await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
                 }
             } else if (lowerType === 'wheel' || lowerType === 'scroll') {
+                // Check session
+                if (!this.remoteControlAllowedForSession) {
+                    return;
+                }
+
                 if (deltaY > 0) {
                     await mouse.scrollDown(Math.abs(deltaY));
                 } else if (deltaY < 0) {
@@ -886,42 +891,9 @@ export class CallsWidgetWindow {
                 } else if (deltaX < 0) {
                     await mouse.scrollLeft(Math.abs(deltaX));
                 }
-                // Yield to event loop after scroll to allow video rendering
-                await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
-            }
-            const totalDuration = Date.now() - eventStartTime;
-            // Diagnostic: log total event processing time for non-move events
-            if (lowerType !== 'mousemove' && lowerType !== 'move') {
-                log.debug('handleSendRemoteControlEvent: success', {type: lowerType, total_ms: totalDuration});
-            }
-            // Diagnostic: warn if total event processing exceeded 100ms (causes frame drops)
-            if (totalDuration > 100) {
-                log.warn('handleSendRemoteControlEvent: EVENT TOO SLOW - may cause screen freeze', {
-                    type: lowerType,
-                    total_ms: totalDuration,
-                    note: 'If this happens frequently, screen capture will freeze',
-                });
             }
         } catch (e) {
-            log.error('Failed to send system input event', e);
-        } finally {
-            (this as any).isProcessingInput = false;
-
-            // Process any pending mousemove that was skipped while we were busy
-            // Use setTimeout(0) to yield to the event loop first, allowing screen capture to update
-            const pendingX = (this as any).pendingMoveX;
-            const pendingY = (this as any).pendingMoveY;
-            if (pendingX !== undefined && pendingY !== undefined) {
-                (this as any).pendingMoveX = undefined;
-                (this as any).pendingMoveY = undefined;
-                // Defer processing to next tick so event loop can update screen capture
-                setTimeout(() => {
-                    this.handleSendRemoteControlEvent(
-                        {} as any,
-                        {type: 'mousemove', x: pendingX, y: pendingY},
-                    );
-                }, 0);
-            }
+            log.error('Failed to execute remote control event', e);
         }
     };
 
@@ -1057,7 +1029,7 @@ export class CallsWidgetWindow {
             return message;
         }).catch((err) => {
             // Only send calls error if this window has been initialized (i.e. we are in a call).
-            // The rest of the logic is shared so that other plugins can request screen sources.
+            // The rest of the logic is shared so that other plugins can request screen sharing sources.
             if (this.callID) {
                 view.sendToRenderer(CALLS_ERROR, ...screenPermissionsErrArgs);
                 this.win?.webContents.send(CALLS_ERROR, ...screenPermissionsErrArgs);
