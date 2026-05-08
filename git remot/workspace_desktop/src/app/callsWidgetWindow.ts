@@ -1,6 +1,7 @@
 // Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
+import {mouse, Button, Point} from '@nut-tree-fork/nut-js';
 import {uIOhook, UiohookKey} from 'uiohook-napi';
 import type {IpcMainEvent, Rectangle, Event, IpcMainInvokeEvent} from 'electron';
 import {BrowserWindow, desktopCapturer, dialog, ipcMain, systemPreferences, screen, shell} from 'electron';
@@ -58,6 +59,40 @@ import type {
 
 const log = new Logger('CallsWidgetWindow');
 
+const uioKeyMap: Record<string, number> = {
+    Enter: UiohookKey.Enter,
+    Escape: UiohookKey.Escape,
+    Backspace: UiohookKey.Backspace,
+    Tab: UiohookKey.Tab,
+    Space: UiohookKey.Space,
+    ArrowUp: UiohookKey.ArrowUp,
+    ArrowDown: UiohookKey.ArrowDown,
+    ArrowLeft: UiohookKey.ArrowLeft,
+    ArrowRight: UiohookKey.ArrowRight,
+    Control: UiohookKey.Ctrl,
+    Shift: UiohookKey.Shift,
+    Alt: UiohookKey.Alt,
+    Meta: UiohookKey.Meta,
+    Delete: UiohookKey.Delete,
+    Home: UiohookKey.Home,
+    End: UiohookKey.End,
+    PageUp: UiohookKey.PageUp,
+    PageDown: UiohookKey.PageDown,
+    Insert: UiohookKey.Insert,
+    CapsLock: UiohookKey.CapsLock,
+    Semicolon: UiohookKey.Semicolon,
+    Equal: UiohookKey.Equal,
+    Comma: UiohookKey.Comma,
+    Minus: UiohookKey.Minus,
+    Period: UiohookKey.Period,
+    Slash: UiohookKey.Slash,
+    Backquote: UiohookKey.Backquote,
+    BracketLeft: UiohookKey.BracketLeft,
+    Backslash: UiohookKey.Backslash,
+    BracketRight: UiohookKey.BracketRight,
+    Quote: UiohookKey.Quote,
+};
+
 export class CallsWidgetWindow {
     private win?: BrowserWindow;
     private mainView?: MattermostWebContentsView;
@@ -69,7 +104,6 @@ export class CallsWidgetWindow {
     private warnedWayland?: boolean;
     private remoteControlAllowedForSession?: boolean;
     private remoteControlEventQueue: any[] = [];
-    private pendingMouseMove?: any;
     private isProcessingQueue = false;
     private cachedTargetDisplay?: any;
 
@@ -610,7 +644,6 @@ export class CallsWidgetWindow {
         log.debug('handleRemoteControlTerminateSession');
         this.remoteControlAllowedForSession = false;
         this.remoteControlEventQueue = [];
-        this.pendingMouseMove = undefined;
     };
 
     private handleSendRemoteControlEvent = (ev: IpcMainEvent, remoteEvent: any) => {
@@ -634,7 +667,19 @@ export class CallsWidgetWindow {
 
         const type = (remoteEvent.type || remoteEvent.action || '').toLowerCase();
         if (type === 'mousemove' || type === 'move') {
-            this.pendingMouseMove = remoteEvent;
+            // Tail-coalescing: if last event in queue is mousemove, replace it.
+            const lastIdx = this.remoteControlEventQueue.length - 1;
+            if (lastIdx >= 0) {
+                const lastEvent = this.remoteControlEventQueue[lastIdx];
+                const lastType = (lastEvent.type || lastEvent.action || '').toLowerCase();
+                if (lastType === 'mousemove' || lastType === 'move') {
+                    this.remoteControlEventQueue[lastIdx] = remoteEvent;
+                } else {
+                    this.remoteControlEventQueue.push(remoteEvent);
+                }
+            } else {
+                this.remoteControlEventQueue.push(remoteEvent);
+            }
         } else {
             this.remoteControlEventQueue.push(remoteEvent);
         }
@@ -649,21 +694,26 @@ export class CallsWidgetWindow {
     private processRemoteControlQueue = async () => {
         this.isProcessingQueue = true;
 
-        while (this.remoteControlEventQueue.length > 0 || this.pendingMouseMove) {
-            // Priority 1: Handle any pending mouse move
-            if (this.pendingMouseMove) {
-                const moveEvent = this.pendingMouseMove;
-                this.pendingMouseMove = undefined;
-                await this.executeRemoteControlEvent(moveEvent);
-                await new Promise((resolve) => setTimeout(resolve, 0));
+        while (this.remoteControlEventQueue.length > 0) {
+            // Immediately stop processing if session was terminated.
+            if (!this.remoteControlAllowedForSession) {
+                this.remoteControlEventQueue = [];
+                break;
             }
 
-            // Priority 2: Handle next event in queue
             const remoteEvent = this.remoteControlEventQueue.shift();
-            if (remoteEvent) {
-                await this.executeRemoteControlEvent(remoteEvent);
-                await new Promise((resolve) => setTimeout(resolve, 0));
+            if (!remoteEvent) {
+                continue;
             }
+
+            // eslint-disable-next-line no-await-in-loop
+            await this.executeRemoteControlEvent(remoteEvent);
+
+            // Yield to event loop between each operation.
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((resolve) => {
+                setImmediate(resolve);
+            });
         }
 
         this.isProcessingQueue = false;
@@ -678,40 +728,6 @@ export class CallsWidgetWindow {
 
         const lowerType = eventType.toLowerCase();
 
-        const uioKeyMap: Record<string, number> = {
-            Enter: UiohookKey.Enter,
-            Escape: UiohookKey.Escape,
-            Backspace: UiohookKey.Backspace,
-            Tab: UiohookKey.Tab,
-            Space: UiohookKey.Space,
-            ArrowUp: UiohookKey.ArrowUp,
-            ArrowDown: UiohookKey.ArrowDown,
-            ArrowLeft: UiohookKey.ArrowLeft,
-            ArrowRight: UiohookKey.ArrowRight,
-            Control: UiohookKey.Ctrl,
-            Shift: UiohookKey.Shift,
-            Alt: UiohookKey.Alt,
-            Meta: UiohookKey.Meta,
-            Delete: UiohookKey.Delete,
-            Home: UiohookKey.Home,
-            End: UiohookKey.End,
-            PageUp: UiohookKey.PageUp,
-            PageDown: UiohookKey.PageDown,
-            Insert: UiohookKey.Insert,
-            CapsLock: UiohookKey.CapsLock,
-            Semicolon: UiohookKey.Semicolon,
-            Equal: UiohookKey.Equal,
-            Comma: UiohookKey.Comma,
-            Minus: UiohookKey.Minus,
-            Period: UiohookKey.Period,
-            Slash: UiohookKey.Slash,
-            Backquote: UiohookKey.Backquote,
-            BracketLeft: UiohookKey.BracketLeft,
-            Backslash: UiohookKey.Backslash,
-            BracketRight: UiohookKey.BracketRight,
-            Quote: UiohookKey.Quote,
-        };
-
         if (!this.warnedWayland && process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland') {
             log.warn('handleSendRemoteControlEvent: Wayland detected. Mouse control might not work. X11 is recommended.');
             this.warnedWayland = true;
@@ -720,6 +736,7 @@ export class CallsWidgetWindow {
         if (!this.checkAccessibilityPermissions()) {
             log.warn('handleSendRemoteControlEvent: missing accessibility permissions');
             if (process.platform === 'darwin') {
+                // eslint-disable-next-line no-await-in-loop
                 const {response} = await dialog.showMessageBox({
                     type: 'warning',
                     title: localizeMessage('callsWidgetWindow.accessibilityRequired.title', 'Accessibility Permission Required'),
@@ -736,12 +753,16 @@ export class CallsWidgetWindow {
                 }
             }
             this.remoteControlEventQueue = [];
-            this.pendingMouseMove = undefined;
             return;
         }
 
         try {
             if (['mousedown', 'mouseup', 'mousemove', 'click', 'move'].includes(lowerType)) {
+                // Immediately check session before native call
+                if (!this.remoteControlAllowedForSession) {
+                    return;
+                }
+
                 let targetDisplay = this.cachedTargetDisplay;
                 if (!targetDisplay) {
                     targetDisplay = screen.getPrimaryDisplay();
@@ -779,30 +800,40 @@ export class CallsWidgetWindow {
                         targetY *= targetDisplay.scaleFactor;
                     }
 
-                    uIOhook.moveMouse(targetX, targetY);
+                    await mouse.setPosition(new Point(targetX, targetY));
                 }
 
                 if (lowerType === 'mousedown' || lowerType === 'mouseup' || lowerType === 'click') {
-                    const buttons: Record<string | number, number> = {
-                        0: 1,
-                        1: 3,
-                        2: 2,
-                        left: 1,
-                        middle: 3,
-                        right: 2,
+                    // Check session again
+                    if (!this.remoteControlAllowedForSession) {
+                        return;
+                    }
+
+                    const buttons: Record<string | number, Button> = {
+                        0: Button.LEFT,
+                        1: Button.MIDDLE,
+                        2: Button.RIGHT,
+                        left: Button.LEFT,
+                        middle: Button.MIDDLE,
+                        right: Button.RIGHT,
                     };
                     const btnKey = button ?? 0;
-                    const uioButton = buttons[btnKey] ?? buttons[btnKey.toString().toLowerCase()] ?? 1;
+                    const nutButton = buttons[btnKey] ?? buttons[btnKey.toString().toLowerCase()] ?? Button.LEFT;
 
                     if (lowerType === 'click') {
-                        uIOhook.clickMouse(uioButton);
+                        await mouse.click(nutButton);
                     } else if (lowerType === 'mousedown') {
-                        uIOhook.pressMouse(uioButton);
+                        await mouse.pressButton(nutButton);
                     } else {
-                        uIOhook.releaseMouse(uioButton);
+                        await mouse.releaseButton(nutButton);
                     }
                 }
             } else if (['keydown', 'keyup', 'key'].includes(lowerType)) {
+                // Check session before native keyboard call
+                if (!this.remoteControlAllowedForSession) {
+                    return;
+                }
+
                 const modifiers: number[] = [];
                 if (ctrlKey) {
                     modifiers.push(UiohookKey.Ctrl);
@@ -844,11 +875,21 @@ export class CallsWidgetWindow {
                     }
                 }
             } else if (lowerType === 'wheel' || lowerType === 'scroll') {
-                if (deltaY !== 0) {
-                    uIOhook.scrollMouse(0, deltaY);
+                // Check session
+                if (!this.remoteControlAllowedForSession) {
+                    return;
                 }
-                if (deltaX !== 0) {
-                    uIOhook.scrollMouse(deltaX, 0);
+
+                if (deltaY > 0) {
+                    await mouse.scrollDown(Math.abs(deltaY));
+                } else if (deltaY < 0) {
+                    await mouse.scrollUp(Math.abs(deltaY));
+                }
+
+                if (deltaX > 0) {
+                    await mouse.scrollRight(Math.abs(deltaX));
+                } else if (deltaX < 0) {
+                    await mouse.scrollLeft(Math.abs(deltaX));
                 }
             }
         } catch (e) {
