@@ -113,7 +113,7 @@ export default class CallsClient extends EventEmitter {
         };
         this.defaultVideoTrackOptions = DefaultVideoTrackOptions;
         this.defaultVideoTrackEncodings = [
-            {maxBitrate: 1000 * 1000, maxFramerate: 30, scaleResolutionDownBy: 1.0},
+            {maxBitrate: 3 * 1000 * 1000, maxFramerate: 30, scaleResolutionDownBy: 1.0},
         ];
         this.onDeviceChange = async () => {
             await this.updateDevices();
@@ -968,6 +968,9 @@ export default class CallsClient extends EventEmitter {
         }
 
         const screenTrack = screenStream.getVideoTracks()[0];
+        if ('contentHint' in screenTrack) {
+            (screenTrack as any).contentHint = 'text';
+        }
         this.localScreenTrack = screenTrack;
 
         const screenAudioTrack = screenStream.getAudioTracks()[0];
@@ -1224,6 +1227,17 @@ export default class CallsClient extends EventEmitter {
             throw new Error('not connected');
         }
 
+        const stats = await this.peer.getStats();
+        if (stats) {
+            stats.forEach((report) => {
+                if (report.type === 'outbound-rtp' && report.kind === 'video') {
+                    if (report.qualityLimitationReason && report.qualityLimitationReason !== 'none') {
+                        logWarn(`quality limitation detected: ${report.qualityLimitationReason}`, report);
+                    }
+                }
+            });
+        }
+
         const tracksInfo : TrackMetadata[] = [];
         this.streams.forEach((stream) => {
             return stream.getTracks().forEach((track) => {
@@ -1237,8 +1251,6 @@ export default class CallsClient extends EventEmitter {
                 });
             });
         });
-
-        const stats = await this.peer.getStats();
 
         return {
             initTime: this.initTime,

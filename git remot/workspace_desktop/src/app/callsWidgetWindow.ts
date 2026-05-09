@@ -970,34 +970,22 @@ export class CallsWidgetWindow {
             const allDisplays = screen.getAllDisplays();
 
             const message = sources.map((source) => {
-                // For screen sources, match with the correct display
-                // On Windows, source IDs like "screen:0:0" or "screen:4:0" use GDI indices
-                // which don't map to display indices. We match by:
-                // 1. Source name matching display label (e.g. "Screen 1" matches primary)
-                // 2. Thumbnail aspect ratio matching display aspect ratio (fallback)
                 let screenID = '';
                 if (source.id.startsWith('screen:')) {
-                    const thumbWidth = source.thumbnail.getSize().width;
-                    const thumbHeight = source.thumbnail.getSize().height;
-                    const thumbAspect = thumbWidth / thumbHeight;
+                const thumbSize = source.thumbnail.getSize();
+                const thumbAspect = thumbSize.width / thumbSize.height;
 
                     let matchedDisplay: any = null;
 
-                    // Try matching by name: "Primary Screen" or screen number
-                    // On Windows, source.name is like "Screen 1", "Screen 2"
-                    // On macOS, it's like "Built-in Retina Display"
                     const nameMatch = source.name.match(/(\d+)/);
                     if (nameMatch) {
                         const screenNum = parseInt(nameMatch[1], 10);
-
-                        // Reversed mapping: desktopCapturer order differs from getAllDisplays
                         const displayIndex = allDisplays.length - screenNum;
                         if (displayIndex >= 0 && displayIndex < allDisplays.length) {
                             matchedDisplay = allDisplays[displayIndex];
                         }
                     }
 
-                    // If no name match, try matching by thumbnail aspect ratio vs display aspect ratio
                     if (!matchedDisplay) {
                         let bestDiff = Infinity;
                         for (const display of allDisplays) {
@@ -1012,17 +1000,8 @@ export class CallsWidgetWindow {
 
                     if (matchedDisplay) {
                         screenID = matchedDisplay.id.toString();
-                        log.debug('handleGetDesktopSources: matched screen source to display', {
-                            sourceID: source.id,
-                            sourceName: source.name,
-                            thumbSize: {width: thumbWidth, height: thumbHeight},
-                            matchedDisplayID: matchedDisplay.id,
-                            matchedDisplayBounds: matchedDisplay.bounds,
-                        });
                     } else {
-                        // Fallback: use the GDI index (may not work on Windows)
                         screenID = source.id.split(':')[1];
-                        log.warn('handleGetDesktopSources: no display match for screen source', source.id);
                     }
                 }
 
