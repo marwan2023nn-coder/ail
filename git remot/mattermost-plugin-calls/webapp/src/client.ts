@@ -1227,15 +1227,20 @@ export default class CallsClient extends EventEmitter {
             throw new Error('not connected');
         }
 
-        const stats = await this.peer.getStats();
-        if (stats) {
-            stats.forEach((report) => {
-                if (report.type === 'outbound-rtp' && report.kind === 'video') {
-                    if (report.qualityLimitationReason && report.qualityLimitationReason !== 'none') {
-                        logWarn(`quality limitation detected: ${report.qualityLimitationReason}`, report);
+        let stats: RTCStatsReport | null = null;
+        try {
+            stats = await this.peer.getStats();
+            if (stats) {
+                stats.forEach((report) => {
+                    if (report.type === 'outbound-rtp' && report.kind === 'video') {
+                        if (report.qualityLimitationReason && report.qualityLimitationReason !== 'none') {
+                            logWarn(`quality limitation detected: ${report.qualityLimitationReason}`, report);
+                        }
                     }
-                }
-            });
+                });
+            }
+        } catch (err) {
+            logWarn('failed to get peer stats', err);
         }
 
         const tracksInfo : TrackMetadata[] = [];

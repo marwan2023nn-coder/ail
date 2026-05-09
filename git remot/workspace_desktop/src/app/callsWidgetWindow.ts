@@ -980,9 +980,21 @@ export class CallsWidgetWindow {
                     const nameMatch = source.name.match(/(\d+)/);
                     if (nameMatch) {
                         const screenNum = parseInt(nameMatch[1], 10);
-                        const displayIndex = allDisplays.length - screenNum;
+
+                        // Try reversed mapping (often works on Windows)
+                        let displayIndex = allDisplays.length - screenNum;
                         if (displayIndex >= 0 && displayIndex < allDisplays.length) {
                             matchedDisplay = allDisplays[displayIndex];
+                        }
+
+                        // Fallback: try direct index matching
+                        if (!matchedDisplay && screenNum > 0 && screenNum <= allDisplays.length) {
+                            matchedDisplay = allDisplays[screenNum - 1];
+                        }
+
+                        // Fallback: match by name if possible
+                        if (!matchedDisplay) {
+                            matchedDisplay = allDisplays.find((d: any) => d.name?.includes(screenNum.toString()));
                         }
                     }
 

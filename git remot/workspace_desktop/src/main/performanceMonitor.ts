@@ -91,7 +91,7 @@ export class PerformanceMonitor {
         if (this.updateInterval) {
             clearTimeout(this.updateInterval);
         }
-        this.updateInterval = setTimeout(this.sendMetrics, METRIC_SEND_INTERVAL);
+        this.updateInterval = setTimeout(() => this.sendMetrics(), METRIC_SEND_INTERVAL);
     };
 
     private stop = () => {
@@ -160,8 +160,8 @@ export class PerformanceMonitor {
         } catch (e) {
             log.error('failed to send metrics', e);
         } finally {
-            if (this.updateInterval && Config.enableMetrics) {
-                this.updateInterval = setTimeout(this.sendMetrics, METRIC_SEND_INTERVAL);
+            if (Config.enableMetrics) {
+                this.updateInterval = setTimeout(() => this.sendMetrics(), METRIC_SEND_INTERVAL);
             }
         }
     };
