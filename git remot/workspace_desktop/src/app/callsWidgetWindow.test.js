@@ -33,6 +33,9 @@ import {CallsWidgetWindow} from './callsWidgetWindow';
 
 jest.mock('@nut-tree-fork/nut-js', () => ({
     mouse: {
+        config: {
+            autoDelayMs: 100,
+        },
         setPosition: jest.fn(),
         click: jest.fn(),
         pressButton: jest.fn(),

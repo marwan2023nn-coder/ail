@@ -89,16 +89,18 @@ export class PerformanceMonitor {
         log.verbose('start');
 
         if (this.updateInterval) {
-            clearInterval(this.updateInterval);
+            clearTimeout(this.updateInterval);
         }
-        this.updateInterval = setInterval(this.sendMetrics, METRIC_SEND_INTERVAL);
+        this.updateInterval = setTimeout(this.sendMetrics, METRIC_SEND_INTERVAL);
     };
 
     private stop = () => {
         log.verbose('stop');
 
-        clearInterval(this.updateInterval);
-        delete this.updateInterval;
+        if (this.updateInterval) {
+            clearTimeout(this.updateInterval);
+            delete this.updateInterval;
+        }
     };
 
     private runMetrics = async () => {
@@ -138,21 +140,29 @@ export class PerformanceMonitor {
     };
 
     private sendMetrics = async () => {
-        const metricsMap = await this.runMetrics();
-        for (const view of this.serverViews.values()) {
-            const serverId = view.serverId;
-            if (!serverId) {
-                log.error(`Cannot send metrics for ${view.name}  - missing server id`);
-                continue;
-            }
+        try {
+            const metricsMap = await this.runMetrics();
+            for (const view of this.serverViews.values()) {
+                const serverId = view.serverId;
+                if (!serverId) {
+                    log.error(`Cannot send metrics for ${view.name}  - missing server id`);
+                    continue;
+                }
 
-            if (!view.webContents) {
-                log.error(`Cannot send metrics for ${view.name}  - missing web contents`);
-                continue;
-            }
+                if (!view.webContents || view.webContents.isDestroyed()) {
+                    log.error(`Cannot send metrics for ${view.name}  - missing or destroyed web contents`);
+                    continue;
+                }
 
-            const serverMetricsMap = new Map([...metricsMap].filter((value) => !value[1].serverId || value[1].serverId === view.serverId));
-            view.webContents.send(METRICS_SEND, serverMetricsMap);
+                const serverMetricsMap = new Map([...metricsMap].filter((value) => !value[1].serverId || value[1].serverId === view.serverId));
+                view.webContents.send(METRICS_SEND, serverMetricsMap);
+            }
+        } catch (e) {
+            log.error('failed to send metrics', e);
+        } finally {
+            if (this.updateInterval && Config.enableMetrics) {
+                this.updateInterval = setTimeout(this.sendMetrics, METRIC_SEND_INTERVAL);
+            }
         }
     };
 
