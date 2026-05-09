@@ -92,6 +92,7 @@ export class PerformanceMonitor {
 
         if (this.updateInterval) {
             clearTimeout(this.updateInterval);
+            delete this.updateInterval;
         }
         this.updateInterval = setTimeout(() => this.sendMetrics(), METRIC_SEND_INTERVAL);
     };
@@ -127,8 +128,12 @@ export class PerformanceMonitor {
         try {
             const viewPromises = [...this.views.values(), ...this.serverViews.values()].map((view) => {
                 return new Promise<void>((resolve) => {
+                if (view.webContents && !view.webContents.isDestroyed()) {
                     viewResolves.set(view.webContents.id, resolve);
                     view.webContents.send(METRICS_REQUEST, view.name, view.serverId);
+                } else {
+                    resolve();
+                }
                 });
             });
 
@@ -146,6 +151,11 @@ export class PerformanceMonitor {
     };
 
     private sendMetrics = async () => {
+        if (this.updateInterval) {
+            clearTimeout(this.updateInterval);
+            delete this.updateInterval;
+        }
+
         try {
             const metricsMap = await this.runMetrics();
             for (const view of this.serverViews.values()) {
@@ -166,7 +176,7 @@ export class PerformanceMonitor {
         } catch (e) {
             log.error('failed to send metrics', e);
         } finally {
-            if (this.updateInterval && Config.enableMetrics) {
+            if (!this.updateInterval && Config.enableMetrics) {
                 this.updateInterval = setTimeout(() => this.sendMetrics(), METRIC_SEND_INTERVAL);
             }
         }

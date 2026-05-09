@@ -869,6 +869,7 @@ export default class CallsClient extends EventEmitter {
                 track.dispatchEvent(new Event('ended'));
             });
         });
+        this.streams = [];
     }
 
     public mute() {
@@ -1243,6 +1244,11 @@ export default class CallsClient extends EventEmitter {
         } catch (err) {
             logWarn('getStats: failed to retrieve peer stats', err);
         }
+
+        // We filter out any stream that doesn't have any live tracks.
+        // This is to avoid keeping references to streams that are no longer active,
+        // which would cause a memory leak and performance degradation over time.
+        this.streams = this.streams.filter((s) => s.getTracks().some((t) => t.readyState === 'live'));
 
         const tracksInfo : TrackMetadata[] = [];
         this.streams.forEach((stream) => {
