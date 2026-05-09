@@ -18,6 +18,7 @@ module.exports = merge(base, {
         '@nut-tree-fork/nut-js': 'require("@nut-tree-fork/nut-js")',
         '@nut-tree-fork/libnut': 'require("@nut-tree-fork/libnut")',
         'uiohook-napi': 'require("uiohook-napi")',
+        'node-gyp-build': 'require("node-gyp-build")',
         bindings: 'require("bindings")',
     },
     externalsPresets: {
