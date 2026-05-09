@@ -519,7 +519,9 @@ export class CallsWidgetWindow {
                     const nameMatch = matchedSource.name.match(/(\d+)/);
                     if (nameMatch) {
                         const screenNum = parseInt(nameMatch[1], 10);
-                        const displayIndex = displays.length - screenNum;
+
+                        // Try reversed mapping
+                        let displayIndex = displays.length - screenNum;
                         if (displayIndex >= 0 && displayIndex < displays.length) {
                             this.sharedDisplayID = displays[displayIndex].id;
                             log.debug('handleShareScreen: matched screen source by name (reversed)', {
@@ -528,6 +530,30 @@ export class CallsWidgetWindow {
                                 displayIndex,
                                 displayID: displays[displayIndex].id,
                             });
+                        }
+
+                        // Fallback: try direct index matching
+                        if (!this.sharedDisplayID && screenNum > 0 && screenNum <= displays.length) {
+                            this.sharedDisplayID = displays[screenNum - 1].id;
+                            log.debug('handleShareScreen: matched screen source by name (direct)', {
+                                sourceID,
+                                sourceName: matchedSource.name,
+                                displayIndex: screenNum - 1,
+                                displayID: displays[screenNum - 1].id,
+                            });
+                        }
+
+                        // Fallback: match by name if possible
+                        if (!this.sharedDisplayID) {
+                            const matchedDisplay = displays.find((d: any) => d.name?.includes(screenNum.toString()));
+                            if (matchedDisplay) {
+                                this.sharedDisplayID = matchedDisplay.id;
+                                log.debug('handleShareScreen: matched screen source by name (match)', {
+                                    sourceID,
+                                    sourceName: matchedSource.name,
+                                    displayID: matchedDisplay.id,
+                                });
+                            }
                         }
                     }
                 }

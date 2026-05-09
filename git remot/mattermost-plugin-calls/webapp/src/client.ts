@@ -968,9 +968,6 @@ export default class CallsClient extends EventEmitter {
         }
 
         const screenTrack = screenStream.getVideoTracks()[0];
-        if ('contentHint' in screenTrack) {
-            (screenTrack as any).contentHint = 'text';
-        }
         this.localScreenTrack = screenTrack;
 
         const screenAudioTrack = screenStream.getAudioTracks()[0];

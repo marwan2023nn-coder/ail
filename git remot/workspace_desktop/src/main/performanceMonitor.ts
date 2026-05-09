@@ -24,6 +24,7 @@ type Metrics = {
 
 export class PerformanceMonitor {
     private updateInterval?: NodeJS.Timeout;
+    private isRunning: boolean;
     private views: Map<number, MetricsView>;
     private serverViews: Map<number, MetricsView>;
     private isInitted: boolean;
@@ -32,6 +33,7 @@ export class PerformanceMonitor {
         this.views = new Map();
         this.serverViews = new Map();
         this.isInitted = false;
+        this.isRunning = false;
 
         powerMonitor.on('suspend', this.stop);
         powerMonitor.on('resume', this.start);
@@ -47,7 +49,9 @@ export class PerformanceMonitor {
         this.isInitted = true;
 
         // Run once because the first CPU value is always 0
-        this.runMetrics();
+        this.runMetrics().catch((err) => {
+            log.error('failed to run initial metrics', err);
+        });
 
         if (Config.enableMetrics) {
             this.start();
@@ -88,6 +92,7 @@ export class PerformanceMonitor {
 
         log.verbose('start');
 
+        this.isRunning = true;
         if (this.updateInterval) {
             clearTimeout(this.updateInterval);
         }
@@ -97,6 +102,7 @@ export class PerformanceMonitor {
     private stop = () => {
         log.verbose('stop');
 
+        this.isRunning = false;
         if (this.updateInterval) {
             clearTimeout(this.updateInterval);
             delete this.updateInterval;
@@ -121,21 +127,25 @@ export class PerformanceMonitor {
             metricsMap.set(name, metrics);
             viewResolves.get(event.sender.id)?.();
         };
-        ipcMain.on(METRICS_RECEIVE, listener);
-        const viewPromises = [...this.views.values(), ...this.serverViews.values()].map((view) => {
-            return new Promise<void>((resolve) => {
-                viewResolves.set(view.webContents.id, resolve);
-                view.webContents.send(METRICS_REQUEST, view.name, view.serverId);
-            });
-        });
 
-        // After 5 seconds, if all the promises are not resolved, resolve them so we don't block the send
-        // This can happen if a view doesn't send back metrics information
-        setTimeout(() => {
-            [...viewResolves.values()].forEach((value) => value());
-        }, 5000);
-        await Promise.allSettled(viewPromises);
-        ipcMain.off(METRICS_RECEIVE, listener);
+        try {
+            ipcMain.on(METRICS_RECEIVE, listener);
+            const viewPromises = [...this.views.values(), ...this.serverViews.values()].map((view) => {
+                return new Promise<void>((resolve) => {
+                    viewResolves.set(view.webContents.id, resolve);
+                    view.webContents.send(METRICS_REQUEST, view.name, view.serverId);
+                });
+            });
+
+            // After 5 seconds, if all the promises are not resolved, resolve them so we don't block the send
+            // This can happen if a view doesn't send back metrics information
+            setTimeout(() => {
+                [...viewResolves.values()].forEach((value) => value());
+            }, 5000);
+            await Promise.allSettled(viewPromises);
+        } finally {
+            ipcMain.off(METRICS_RECEIVE, listener);
+        }
         return metricsMap;
     };
 
@@ -160,16 +170,16 @@ export class PerformanceMonitor {
         } catch (e) {
             log.error('failed to send metrics', e);
         } finally {
-            if (Config.enableMetrics) {
+            if (this.isRunning && Config.enableMetrics) {
                 this.updateInterval = setTimeout(() => this.sendMetrics(), METRIC_SEND_INTERVAL);
             }
         }
     };
 
     private handleConfigUpdate = () => {
-        if (!Config.enableMetrics && this.updateInterval) {
+        if (!Config.enableMetrics && this.isRunning) {
             this.stop();
-        } else if (!this.updateInterval) {
+        } else if (!this.isRunning && Config.enableMetrics) {
             this.start();
         }
     };
