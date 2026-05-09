@@ -968,9 +968,10 @@ export default class CallsClient extends EventEmitter {
         }
 
         const screenTrack = screenStream.getVideoTracks()[0];
-        if ('contentHint' in screenTrack) {
-            (screenTrack as any).contentHint = 'text';
-        }
+
+        // NOTE: we purposely don't set contentHint to 'text' here as it can
+        // lead to screen share freezes on dynamic content (video, animations)
+        // due to the encoder reducing keyframe frequency.
         this.localScreenTrack = screenTrack;
 
         const screenAudioTrack = screenStream.getAudioTracks()[0];
@@ -1227,15 +1228,20 @@ export default class CallsClient extends EventEmitter {
             throw new Error('not connected');
         }
 
-        const stats = await this.peer.getStats();
-        if (stats) {
-            stats.forEach((report) => {
-                if (report.type === 'outbound-rtp' && report.kind === 'video') {
-                    if (report.qualityLimitationReason && report.qualityLimitationReason !== 'none') {
-                        logWarn(`quality limitation detected: ${report.qualityLimitationReason}`, report);
+        let stats: RTCStatsReport | null = null;
+        try {
+            stats = await this.peer.getStats();
+            if (stats) {
+                stats.forEach((report) => {
+                    if (report.type === 'outbound-rtp' && report.kind === 'video') {
+                        if (report.qualityLimitationReason && report.qualityLimitationReason !== 'none') {
+                            logWarn(`quality limitation detected: ${report.qualityLimitationReason}`, report);
+                        }
                     }
-                }
-            });
+                });
+            }
+        } catch (err) {
+            logWarn('getStats: failed to retrieve peer stats', err);
         }
 
         const tracksInfo : TrackMetadata[] = [];
