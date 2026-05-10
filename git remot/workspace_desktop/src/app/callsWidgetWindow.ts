@@ -519,14 +519,27 @@ export class CallsWidgetWindow {
                     const nameMatch = matchedSource.name.match(/(\d+)/);
                     if (nameMatch) {
                         const screenNum = parseInt(nameMatch[1], 10);
-                        const displayIndex = displays.length - screenNum;
-                        if (displayIndex >= 0 && displayIndex < displays.length) {
-                            this.sharedDisplayID = displays[displayIndex].id;
+
+                        // Method 1: Reversed mapping (Windows GDI)
+                        const reversedIndex = displays.length - screenNum;
+                        if (reversedIndex >= 0 && reversedIndex < displays.length) {
+                            this.sharedDisplayID = displays[reversedIndex].id;
                             log.debug('handleShareScreen: matched screen source by name (reversed)', {
                                 sourceID,
                                 sourceName: matchedSource.name,
-                                displayIndex,
-                                displayID: displays[displayIndex].id,
+                                reversedIndex,
+                                displayID: displays[reversedIndex].id,
+                            });
+                        }
+
+                        // Method 2: Direct index fallback
+                        if (!this.sharedDisplayID && screenNum > 0 && screenNum <= displays.length) {
+                            this.sharedDisplayID = displays[screenNum - 1].id;
+                            log.debug('handleShareScreen: matched screen source by name (direct fallback)', {
+                                sourceID,
+                                sourceName: matchedSource.name,
+                                screenIndex: screenNum - 1,
+                                displayID: displays[screenNum - 1].id,
                             });
                         }
                     }
@@ -980,9 +993,16 @@ export class CallsWidgetWindow {
                     const nameMatch = source.name.match(/(\d+)/);
                     if (nameMatch) {
                         const screenNum = parseInt(nameMatch[1], 10);
-                        const displayIndex = allDisplays.length - screenNum;
-                        if (displayIndex >= 0 && displayIndex < allDisplays.length) {
-                            matchedDisplay = allDisplays[displayIndex];
+
+                        // Method 1: Reversed mapping (Windows GDI)
+                        const reversedIndex = allDisplays.length - screenNum;
+                        if (reversedIndex >= 0 && reversedIndex < allDisplays.length) {
+                            matchedDisplay = allDisplays[reversedIndex];
+                        }
+
+                        // Method 2: Direct index fallback
+                        if (!matchedDisplay && screenNum > 0 && screenNum <= allDisplays.length) {
+                            matchedDisplay = allDisplays[screenNum - 1];
                         }
                     }
 
