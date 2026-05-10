@@ -44,8 +44,10 @@ export class WebSocketClient extends EventEmitter {
     private eventPrefix: string = 'custom_' + pluginId;
     private lastDisconnect = 0;
     private reconnectRetryTime = wsMinReconnectRetryTimeMs;
+    private lastBackendReconnectTry = 0;
     private closed = false;
     private isReconnect = false;
+    private backendReconnecting = false;
     public isDesktop = false;
     private remoteControlPermissionPending = false;
     private remoteControlPermissionGranted = false;
@@ -247,10 +249,7 @@ export class WebSocketClient extends EventEmitter {
                         this.wsBackend.send(JSON.stringify(rawEvent));
                     } else {
                         logWarn('failed to send mouse event: no desktopAPI and no wsBackend', msg.data);
-                        if (!this.isReconnect) {
-                            this.reconnectBackend();
-                            this.isReconnect = false;
-                        }
+                        this.reconnectBackend();
                     }
                 }
             }
@@ -296,7 +295,17 @@ export class WebSocketClient extends EventEmitter {
     }
 
     private reconnectBackend() {
-        this.isReconnect = true;
+        if (this.backendReconnecting) {
+            return;
+        }
+
+        const now = Date.now();
+        if (now - this.lastBackendReconnectTry < wsReconnectionTimeout) {
+            return;
+        }
+
+        this.lastBackendReconnectTry = now;
+        this.backendReconnecting = true;
         if (this.wsBackend) {
             this.wsBackend.close();
             this.wsBackend = null;
@@ -306,9 +315,16 @@ export class WebSocketClient extends EventEmitter {
         this.wsBackend.onopen = () => {
             logDebug('wsBackend: connected');
             this.isDesktop = true;
+            this.backendReconnecting = false;
         };
-        this.wsBackend.onclose = () => logWarn('wsBackend: disconnected');
-        this.wsBackend.onerror = () => logErr('wsBackend: connection error');
+        this.wsBackend.onclose = () => {
+            logWarn('wsBackend: disconnected');
+            this.backendReconnecting = false;
+        };
+        this.wsBackend.onerror = () => {
+            logErr('wsBackend: connection error');
+            this.backendReconnecting = false;
+        };
     }
 
     close() {
